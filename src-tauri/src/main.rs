@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    rust_habit_lib::run()
+    habit_levelling_lib::run()
 }
