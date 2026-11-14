@@ -1,0 +1,3 @@
+# SQLx checksums migration files byte-for-byte; CRLF conversion on checkout
+# would make an applied migration look "modified". Keep them LF everywhere.
+*.sql text eol=lf
