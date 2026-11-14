@@ -12,9 +12,9 @@
   "app": {
     "windows": [
       {
-        "title": "habit_levelling",
-        "width": 800,
-        "height": 600
+        "title": "Habit Levelling",
+        "width": 960,
+        "height": 760
       }
     ],
     "security": {

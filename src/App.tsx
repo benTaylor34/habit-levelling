@@ -1,49 +1,46 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useState } from "react";
+import { api, errorMessage } from "./lib/tauri";
+import type { IsoDate } from "./lib/types";
+import { Dashboard } from "./pages/Dashboard";
+import { HabitDetails } from "./pages/HabitDetails";
 import "./App.css";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+type View = { page: "dashboard" } | { page: "details"; id: number };
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+function App() {
+  const [view, setView] = useState<View>({ page: "dashboard" });
+  const [today, setToday] = useState<IsoDate | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Ask Rust what "today" is; re-check when the window regains focus so
+  // leaving the app open past midnight rolls over to the new day.
+  useEffect(() => {
+    const refresh = () =>
+      api.getToday().then(setToday).catch((e) => setError(errorMessage(e)));
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, []);
+
+  if (error) return <main className="container"><p className="error">{error}</p></main>;
+  if (!today) return <main className="container"><p className="muted">Loading…</p></main>;
 
   return (
     <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
+      {view.page === "dashboard" ? (
+        <Dashboard
+          key={today}
+          today={today}
+          onOpen={(id) => setView({ page: "details", id })}
         />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
+      ) : (
+        <HabitDetails
+          key={`${view.id}-${today}`}
+          id={view.id}
+          today={today}
+          onBack={() => setView({ page: "dashboard" })}
+        />
+      )}
     </main>
   );
 }

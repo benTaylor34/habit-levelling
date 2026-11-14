@@ -1,11 +1,9 @@
 [package]
 name = "habit_levelling"
 version = "0.1.0"
-description = "A Tauri App"
+description = "Habit Levelling - a local-first habit tracker"
 authors = ["you"]
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
@@ -22,9 +20,11 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri-plugin-sql = { version = "2", features = ["sqlite"] }
-sqlx = {version = "0.8", features = ["runtime-tokio-native-tls", "sqlite"] }
-tokio = {version = "1.20.0", features = ["macros"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "macros", "migrate"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
