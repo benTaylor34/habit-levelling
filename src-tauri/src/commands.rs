@@ -11,6 +11,7 @@ use crate::models::{
     XpPreview,
 };
 use crate::habits;
+use crate::recommend::{self, StatRecommendation};
 
 /// "Today" is the user's *local* calendar date, not a UTC timestamp.
 fn today() -> NaiveDate {
@@ -89,4 +90,10 @@ pub async fn preview_xp(
     difficulty: u32,
 ) -> AppResult<XpPreview> {
     habits::preview_xp(&pool, id, today(), minutes, difficulty).await
+}
+
+/// Suggested primary/secondary stats for a habit's name and description.
+#[tauri::command]
+pub fn recommend_stats(name: String, description: Option<String>) -> StatRecommendation {
+    recommend::recommend(&name, description.as_deref())
 }

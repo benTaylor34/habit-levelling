@@ -103,6 +103,14 @@ export interface XpPreview {
   streakPercent: number;
 }
 
+/** Stats suggested for a habit from its name and description. */
+export interface StatRecommendation {
+  primary: StatKey | null;
+  secondary: StatKey | null;
+  /** Keywords that led to the suggestion, strongest first. */
+  matched: string[];
+}
+
 export interface StatInfo {
   key: StatKey;
   name: string;

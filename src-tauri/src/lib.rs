@@ -4,6 +4,7 @@ mod error;
 mod habits;
 mod luck;
 mod models;
+mod recommend;
 mod stats;
 mod streaks;
 
@@ -31,6 +32,7 @@ pub fn run() {
             commands::undo_habit_today,
             commands::get_stats,
             commands::preview_xp,
+            commands::recommend_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

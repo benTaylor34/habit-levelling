@@ -111,3 +111,9 @@ export const CloverIcon = (p: IconProps) => (
     <path d="m16.5 16.5 4 4.5" />
   </Icon>
 );
+
+export const SparkleIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 3.5 13.8 9a2 2 0 0 0 1.2 1.2l5.5 1.8-5.5 1.8a2 2 0 0 0-1.2 1.2L12 20.5 10.2 15A2 2 0 0 0 9 13.8L3.5 12 9 10.2A2 2 0 0 0 10.2 9L12 3.5Z" />
+  </Icon>
+);

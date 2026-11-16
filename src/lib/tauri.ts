@@ -9,6 +9,7 @@ import type {
   HabitSummary,
   IsoDate,
   LogResult,
+  StatRecommendation,
   StatProgress,
   XpPreview,
 } from "./types";
@@ -27,6 +28,8 @@ export const api = {
   getStats: () => invoke<StatProgress[]>("get_stats"),
   previewXp: (id: number, log: CompletionInput) =>
     invoke<XpPreview>("preview_xp", { id, ...log }),
+  recommendStats: (name: string, description: string | null) =>
+    invoke<StatRecommendation>("recommend_stats", { name, description }),
 };
 
 /** Rust errors arrive as plain strings. */
