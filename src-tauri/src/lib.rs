@@ -13,13 +13,25 @@ mod streaks;
 
 use tauri::Manager;
 
+/// The app's identifier before it was renamed (it decides the data folder).
+const LEGACY_IDENTIFIER: &str = "com.ben.habit_levelling";
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            // e.g. %APPDATA%\com.ben.habit_levelling\habits.db on Windows
-            let db_path = app.path().app_data_dir()?.join("habits.db");
+            // e.g. %APPDATA%\com.habitlevelling.app\habits.db on Windows
+            let data_dir = app.path().app_data_dir()?;
+            let db_path = data_dir.join("habits.db");
+            // Early builds used the identifier "com.ben.habit_levelling"; bring
+            // that data across the first time this version starts.
+            if let Some(parent) = data_dir.parent() {
+                let legacy = parent.join(LEGACY_IDENTIFIER).join("habits.db");
+                if let Err(e) = db::adopt_legacy_db(&db_path, &legacy) {
+                    eprintln!("Couldn't copy data from {}: {e}", legacy.display());
+                }
+            }
             let pool = tauri::async_runtime::block_on(db::init_pool(&db_path))?;
             app.manage(pool);
             Ok(())
