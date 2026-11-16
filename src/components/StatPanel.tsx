@@ -1,5 +1,6 @@
 import type { StatProgress } from "../lib/types";
 import { statInfo } from "../lib/types";
+import { RadarChart } from "./RadarChart";
 import { StreakBadge } from "./StreakBadge";
 
 function StatRow({ s }: { s: StatProgress }) {
@@ -50,6 +51,7 @@ export function StatPanel({ stats }: { stats: StatProgress[] }) {
         <h2>Stats</h2>
         {stats.length > 0 && <span className="muted small">Total level {totalLevel}</span>}
       </div>
+      {trainable.length > 0 && <RadarChart stats={trainable} />}
       <ul className="skill-list">
         {trainable.map((s) => (
           <StatRow key={s.stat} s={s} />
