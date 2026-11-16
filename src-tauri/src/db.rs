@@ -74,6 +74,24 @@ pub async fn test_pool() -> SqlitePool {
 mod tests {
     use super::*;
 
+    /// New users (and every prebuilt copy of the app) start from scratch:
+    /// migrations create empty tables and ship no habits, logs or Luck.
+    #[tokio::test]
+    async fn a_new_database_starts_empty() {
+        let pool = test_pool().await;
+        for table in ["habits", "habit_completions", "luck_rolls"] {
+            let (n,): (i64,) = sqlx::query_as(&format!("SELECT COUNT(*) FROM {table}"))
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(n, 0, "{table} should be empty");
+        }
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 11, 16).unwrap();
+        let stats = crate::habits::stat_progress(&pool, today).await.unwrap();
+        assert_eq!(stats.len(), 6, "six stats, Luck still secret");
+        assert!(stats.iter().all(|s| s.level == 1 && s.xp == 0));
+    }
+
     #[tokio::test]
     async fn legacy_database_is_copied_once() {
         let root = std::env::temp_dir().join(format!(
