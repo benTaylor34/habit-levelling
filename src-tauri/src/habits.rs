@@ -11,6 +11,7 @@ use crate::models::{
     Completion, CompletionInput, Habit, HabitDetails, HabitInput, HabitSummary, LuckWin,
     StatHistory, StatProgress, XpPreview,
 };
+use crate::activity::{self, Activity};
 use crate::decay;
 use crate::history::{self, StatGain};
 use crate::stats::{self, Stat};
@@ -313,6 +314,15 @@ pub async fn stat_gains(pool: &SqlitePool) -> AppResult<Vec<StatGain>> {
         }
     }
     Ok(out)
+}
+
+/// A year of daily activity across every habit, for the heatmap.
+pub async fn activity(pool: &SqlitePool, today: NaiveDate) -> AppResult<Activity> {
+    let mut all = Vec::new();
+    for habit in list(pool).await? {
+        all.extend(completions(pool, habit.id).await?);
+    }
+    Ok(activity::build(&all, today))
 }
 
 /// Daily stat XP and levels from `days` ago (or all time) up to `today`.
@@ -685,6 +695,21 @@ mod tests {
         let created = NaiveDate::parse_from_str(&h.created_at[..10], DATE_FORMAT).unwrap();
         let s = summary(&pool, h.id, created + chrono::Days::new(9)).await.unwrap();
         assert_eq!((s.idle_days, s.needs_attention), (9, true));
+    }
+
+    #[tokio::test]
+    async fn activity_counts_every_habit() {
+        let pool = db::test_pool().await;
+        let a = create(&pool, input("Read", None, None)).await.unwrap();
+        let b = create(&pool, input("Run", None, None)).await.unwrap();
+        let today = d("2026-11-16");
+        complete(&pool, a.id, today, log(20, 1)).await.unwrap();
+        complete(&pool, b.id, today, log(30, 1)).await.unwrap();
+        complete(&pool, a.id, d("2026-11-15"), PLAIN).await.unwrap();
+        let act = activity(&pool, today).await.unwrap();
+        let last = act.days.last().unwrap();
+        assert_eq!((last.completions, last.minutes, last.level), (2, 50, 4));
+        assert_eq!((act.total_completions, act.active_days, act.best_day), (3, 2, 2));
     }
 
     /// Log `days` consecutive days ending on `last`, rolling `roll` each time.

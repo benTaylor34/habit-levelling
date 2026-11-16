@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage } from "../lib/tauri";
 import type {
+  Activity,
   CompletionInput,
   HabitSummary,
   IsoDate,
@@ -8,6 +9,7 @@ import type {
   StatProgress,
 } from "../lib/types";
 import { formatLong } from "../lib/dates";
+import { ActivityHeatmap } from "../components/ActivityHeatmap";
 import { HabitCard } from "../components/HabitCard";
 import { HabitForm } from "../components/HabitForm";
 import { LogForm } from "../components/LogForm";
@@ -47,6 +49,7 @@ function ProgressRing({ done, total }: { done: number; total: number }) {
 export function Dashboard({ today, onOpen }: Props) {
   const [habits, setHabits] = useState<HabitSummary[] | null>(null);
   const [stats, setStats] = useState<StatProgress[]>([]);
+  const [activity, setActivity] = useState<Activity | null>(null);
   const [lucky, setLucky] = useState<{ win: LuckWin; habitName: string } | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
@@ -55,9 +58,10 @@ export function Dashboard({ today, onOpen }: Props) {
 
   const load = useCallback(async () => {
     try {
-      const [h, s] = await Promise.all([api.listHabits(), api.getStats()]);
+      const [h, s, a] = await Promise.all([api.listHabits(), api.getStats(), api.getActivity()]);
       setHabits(h);
       setStats(s);
+      setActivity(a);
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -72,7 +76,10 @@ export function Dashboard({ today, onOpen }: Props) {
     try {
       const updated = await action();
       setHabits((hs) => hs?.map((h) => (h.id === updated.id ? updated : h)) ?? null);
-      setStats(await api.getStats());
+      // Logging changes stat XP and today's square on the heatmap.
+      const [s, a] = await Promise.all([api.getStats(), api.getActivity()]);
+      setStats(s);
+      setActivity(a);
     } finally {
       setBusyId(null);
     }
@@ -163,6 +170,18 @@ export function Dashboard({ today, onOpen }: Props) {
           <StatPanel stats={stats} />
         </aside>
       </div>
+
+      {activity && (
+        <section className="panel activity-panel">
+          <div className="panel-header">
+            <h2>
+              {activity.totalCompletions.toLocaleString()}{" "}
+              {activity.totalCompletions === 1 ? "habit" : "habits"} logged in the last year
+            </h2>
+          </div>
+          <ActivityHeatmap activity={activity} today={today} />
+        </section>
+      )}
 
       {logging && (
         <LogForm

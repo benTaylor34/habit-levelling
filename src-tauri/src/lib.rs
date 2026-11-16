@@ -1,3 +1,4 @@
+mod activity;
 mod commands;
 mod db;
 mod decay;
@@ -34,6 +35,7 @@ pub fn run() {
             commands::undo_habit_today,
             commands::get_stats,
             commands::get_stat_history,
+            commands::get_activity,
             commands::preview_xp,
             commands::recommend_stats,
         ])

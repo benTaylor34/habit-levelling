@@ -10,6 +10,7 @@ use crate::models::{
     CompletionInput, Habit, HabitDetails, HabitInput, HabitSummary, LogResult, StatHistory,
     StatProgress, XpPreview,
 };
+use crate::activity::Activity;
 use crate::habits;
 use crate::recommend::{self, StatRecommendation};
 
@@ -105,4 +106,10 @@ pub async fn get_stat_history(
     days: Option<u32>,
 ) -> AppResult<StatHistory> {
     habits::stat_history(&pool, today(), days).await
+}
+
+/// A year of daily activity (habits logged per day) for the heatmap.
+#[tauri::command]
+pub async fn get_activity(pool: State<'_, SqlitePool>) -> AppResult<Activity> {
+    habits::activity(&pool, today()).await
 }

@@ -144,6 +144,24 @@ export interface StatHistory {
   series: StatSeries[];
 }
 
+/** One day on the activity heatmap. */
+export interface ActivityDay {
+  date: IsoDate;
+  completions: number;
+  minutes: number;
+  xp: number;
+  /** Shade from 0 (nothing logged) to 4 (busiest days). */
+  level: number;
+}
+
+/** A year of activity in whole weeks; `days[0]` is always a Monday. */
+export interface Activity {
+  days: ActivityDay[];
+  totalCompletions: number;
+  activeDays: number;
+  bestDay: number;
+}
+
 export interface StatInfo {
   key: StatKey;
   name: string;

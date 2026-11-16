@@ -8,6 +8,7 @@ import type {
   HabitInput,
   HabitSummary,
   IsoDate,
+  Activity,
   LogResult,
   StatHistory,
   StatRecommendation,
@@ -27,6 +28,7 @@ export const api = {
     invoke<LogResult>("complete_habit_today", { id, log }),
   undoToday: (id: number) => invoke<HabitSummary>("undo_habit_today", { id }),
   getStats: () => invoke<StatProgress[]>("get_stats"),
+  getActivity: () => invoke<Activity>("get_activity"),
   /** `days` = null means all time. */
   getStatHistory: (days: number | null) => invoke<StatHistory>("get_stat_history", { days }),
   previewXp: (id: number, log: CompletionInput) =>

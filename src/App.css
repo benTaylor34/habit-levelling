@@ -914,3 +914,40 @@ input[type="number"] { appearance: textfield; }
 .decay-soon { color: var(--warning); }
 .stat-row.decaying .xp-bar > div { background: repeating-linear-gradient(-45deg, var(--stat) 0 4px, color-mix(in srgb, var(--stat) 55%, #000) 4px 7px); }
 .data-table .down { color: var(--danger); }
+
+/* ───────────────────────── Activity heatmap ───────────────────────── */
+/* Sequential one-hue ramp from the app's completion green (validated: ordinal,
+   monotone lightness, lowest step clears 2:1 on --surface). */
+.activity-panel { margin-top: 20px; }
+.heatmap-scroll { overflow-x: auto; padding-bottom: 4px; }
+.heatmap-inner { position: relative; margin: 0 auto; }
+.heatmap svg { display: block; }
+.hm-label { font-size: 10px; fill: var(--muted); }
+.hm-cell { fill: rgb(255 255 255 / 0.05); }
+.lvl-1 { --hm: #1d5c43; }
+.lvl-2 { --hm: #1f8a5e; }
+.lvl-3 { --hm: #2bb67c; }
+.lvl-4 { --hm: #5be3a6; }
+.hm-cell.lvl-1, .hm-cell.lvl-2, .hm-cell.lvl-3, .hm-cell.lvl-4 { fill: var(--hm); }
+.hm-cell.is-today { stroke: var(--text-2); stroke-width: 1.5; }
+.hm-cell.is-hover { stroke: var(--text); stroke-width: 1.5; }
+/* Position and direction come from tipPosition() in ActivityHeatmap.tsx. */
+.hm-tip {
+  position: absolute;
+  pointer-events: none;
+  padding: 6px 10px;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  white-space: nowrap;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgb(0 0 0 / 0.45);
+  z-index: 2;
+}
+.hm-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 8px; flex-wrap: wrap; }
+.hm-legend { display: inline-flex; align-items: center; gap: 3px; }
+.hm-swatch { width: 11px; height: 11px; border-radius: 2.5px; background: rgb(255 255 255 / 0.05); }
+.hm-swatch.lvl-1, .hm-swatch.lvl-2, .hm-swatch.lvl-3, .hm-swatch.lvl-4 { background: var(--hm); }
+.hm-legend .hm-swatch:first-of-type { margin-left: 4px; }
+.hm-legend .hm-swatch:last-of-type { margin-right: 4px; }
