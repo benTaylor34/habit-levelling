@@ -5,10 +5,35 @@ import { formatLong } from "../lib/dates";
 import { HabitCard } from "../components/HabitCard";
 import { HabitForm } from "../components/HabitForm";
 import { SkillPanel } from "../components/SkillPanel";
+import { PlusIcon } from "../components/Icons";
 
 interface Props {
   today: IsoDate;
   onOpen: (id: number) => void;
+}
+
+function ProgressRing({ done, total }: { done: number; total: number }) {
+  const r = 22;
+  const c = 2 * Math.PI * r;
+  const pct = total === 0 ? 0 : done / total;
+  return (
+    <div className="ring" aria-label={`${done} of ${total} done today`}>
+      <svg width="56" height="56" viewBox="0 0 56 56">
+        <circle cx="28" cy="28" r={r} className="ring-track" />
+        <circle
+          cx="28"
+          cy="28"
+          r={r}
+          className="ring-fill"
+          strokeDasharray={c}
+          strokeDashoffset={c * (1 - pct)}
+        />
+      </svg>
+      <span className="ring-text">
+        {done}/{total}
+      </span>
+    </div>
+  );
 }
 
 export function Dashboard({ today, onOpen }: Props) {
@@ -47,23 +72,20 @@ export function Dashboard({ today, onOpen }: Props) {
     }
   }
 
+  const total = habits?.length ?? 0;
   const doneCount = habits?.filter((h) => h.completedToday).length ?? 0;
+  const bestStreak = habits?.reduce((m, h) => Math.max(m, h.currentStreak), 0) ?? 0;
 
   return (
     <>
       <header className="page-header">
         <div>
-          <h1>Habit Levelling</h1>
-          <p className="muted">Today: {formatLong(today)}</p>
+          <p className="eyebrow">{formatLong(today)}</p>
+          <h1>Today</h1>
         </div>
-        {habits && habits.length > 0 && (
-          <div className="today-count">
-            <strong>
-              {doneCount}/{habits.length}
-            </strong>
-            <span className="muted small">done today</span>
-          </div>
-        )}
+        <button className="btn primary" onClick={() => setCreating(true)}>
+          <PlusIcon size={16} /> New habit
+        </button>
       </header>
 
       {error && (
@@ -78,8 +100,11 @@ export function Dashboard({ today, onOpen }: Props) {
             <p className="muted">Loading…</p>
           ) : habits.length === 0 ? (
             <div className="empty">
-              <p>No habits yet.</p>
+              <h3>No habits yet</h3>
               <p className="muted">Create your first habit to start levelling up.</p>
+              <button className="btn primary" onClick={() => setCreating(true)}>
+                <PlusIcon size={16} /> Create habit
+              </button>
             </div>
           ) : (
             habits.map((h) => (
@@ -92,12 +117,22 @@ export function Dashboard({ today, onOpen }: Props) {
               />
             ))
           )}
-          <button className="primary create" onClick={() => setCreating(true)}>
-            + Create Habit
-          </button>
         </section>
 
-        <SkillPanel skills={skills} />
+        <aside className="sidebar">
+          {total > 0 && (
+            <section className="panel overview">
+              <ProgressRing done={doneCount} total={total} />
+              <div>
+                <div className="overview-title">
+                  {doneCount === total ? "All done today" : `${total - doneCount} left today`}
+                </div>
+                <div className="muted small">Best active streak: {bestStreak}d</div>
+              </div>
+            </section>
+          )}
+          <SkillPanel skills={skills} />
+        </aside>
       </div>
 
       {creating && (

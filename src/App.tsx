@@ -27,6 +27,16 @@ function App() {
 
   return (
     <main className="container">
+      <nav className="app-bar">
+        <button className="brand" onClick={() => setView({ page: "dashboard" })}>
+          <span className="brand-mark" aria-hidden>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 18 10 12l4 4 6-8" />
+            </svg>
+          </span>
+          Habit Levelling
+        </button>
+      </nav>
       {view.page === "dashboard" ? (
         <Dashboard
           key={today}

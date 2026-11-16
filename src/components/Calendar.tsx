@@ -1,13 +1,14 @@
 import { useState } from "react";
 import type { IsoDate } from "../lib/types";
 import { parseIsoDate, toIsoDate } from "../lib/dates";
+import { ChevronLeftIcon, ChevronRightIcon } from "./Icons";
 
 interface Props {
   completions: IsoDate[];
   today: IsoDate;
 }
 
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const WEEKDAYS = ["M", "T", "W", "T", "F", "S", "S"];
 
 /** Month grid (Monday first) with completed days highlighted. */
 export function Calendar({ completions, today }: Props) {
@@ -34,26 +35,33 @@ export function Calendar({ completions, today }: Props) {
   return (
     <div className="calendar">
       <div className="calendar-header">
-        <button className="ghost" onClick={() => setMonth(new Date(year, m - 1, 1))}>
-          ‹
-        </button>
         <div>
-          <strong>
-            {month.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
-          </strong>
-          <div className="muted small">{completedThisMonth} days completed</div>
+          <h2>{month.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</h2>
+          <div className="muted small">
+            {completedThisMonth} {completedThisMonth === 1 ? "day" : "days"} completed
+          </div>
         </div>
-        <button
-          className="ghost"
-          disabled={isCurrentMonth}
-          onClick={() => setMonth(new Date(year, m + 1, 1))}
-        >
-          ›
-        </button>
+        <div className="calendar-nav">
+          <button
+            className="btn icon"
+            aria-label="Previous month"
+            onClick={() => setMonth(new Date(year, m - 1, 1))}
+          >
+            <ChevronLeftIcon size={16} />
+          </button>
+          <button
+            className="btn icon"
+            aria-label="Next month"
+            disabled={isCurrentMonth}
+            onClick={() => setMonth(new Date(year, m + 1, 1))}
+          >
+            <ChevronRightIcon size={16} />
+          </button>
+        </div>
       </div>
       <div className="calendar-grid">
-        {WEEKDAYS.map((d) => (
-          <div key={d} className="calendar-weekday">
+        {WEEKDAYS.map((d, i) => (
+          <div key={i} className="calendar-weekday">
             {d}
           </div>
         ))}

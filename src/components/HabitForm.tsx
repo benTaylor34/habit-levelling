@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Habit, HabitInput } from "../lib/types";
 import { SUGGESTED_SKILLS } from "../lib/types";
 
@@ -31,13 +31,24 @@ export function HabitForm({ initial, onSubmit, onCancel }: Props) {
     }
   }
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <form className="modal" onSubmit={submit} onClick={(e) => e.stopPropagation()}>
-        <h2>{initial ? "Edit habit" : "Create habit"}</h2>
+        <div>
+          <h2>{initial ? "Edit habit" : "New habit"}</h2>
+          <p className="muted small">
+            {initial ? "Update the details of this habit." : "Something you want to do every day."}
+          </p>
+        </div>
 
         <label>
-          Name
+          <span>Name</span>
           <input
             autoFocus
             value={name}
@@ -48,7 +59,7 @@ export function HabitForm({ initial, onSubmit, onCancel }: Props) {
         </label>
 
         <label>
-          Description <span className="muted">(optional)</span>
+          <span>Description <span className="muted">(optional)</span></span>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -57,7 +68,7 @@ export function HabitForm({ initial, onSubmit, onCancel }: Props) {
         </label>
 
         <label>
-          Skill <span className="muted">(optional)</span>
+          <span>Skill <span className="muted">(optional)</span></span>
           <input
             list="skill-options"
             value={skill}
@@ -73,11 +84,11 @@ export function HabitForm({ initial, onSubmit, onCancel }: Props) {
 
         {error && <p className="error">{error}</p>}
 
-        <div className="row end">
-          <button type="button" className="secondary" onClick={onCancel}>
+        <div className="modal-actions">
+          <button type="button" className="btn ghost" onClick={onCancel}>
             Cancel
           </button>
-          <button type="submit" className="primary" disabled={saving || !name.trim()}>
+          <button type="submit" className="btn primary" disabled={saving || !name.trim()}>
             {initial ? "Save" : "Create"}
           </button>
         </div>

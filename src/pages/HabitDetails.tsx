@@ -4,7 +4,15 @@ import type { HabitDetails as Details, IsoDate } from "../lib/types";
 import { parseIsoDate } from "../lib/dates";
 import { Calendar } from "../components/Calendar";
 import { HabitForm } from "../components/HabitForm";
-import { StreakBadge } from "../components/StreakBadge";
+import {
+  ArrowLeftIcon,
+  ChartIcon,
+  CheckIcon,
+  FlameIcon,
+  PencilIcon,
+  TrashIcon,
+  TrophyIcon,
+} from "../components/Icons";
 
 interface Props {
   id: number;
@@ -30,12 +38,16 @@ export function HabitDetails({ id, today, onBack }: Props) {
     load();
   }, [load]);
 
+  const back = (
+    <button className="btn ghost back" onClick={onBack}>
+      <ArrowLeftIcon size={16} /> All habits
+    </button>
+  );
+
   if (!details) {
     return (
       <>
-        <button className="ghost" onClick={onBack}>
-          ← Back
-        </button>
+        {back}
         {error ? <p className="error">{error}</p> : <p className="muted">Loading…</p>}
       </>
     );
@@ -69,26 +81,42 @@ export function HabitDetails({ id, today, onBack }: Props) {
     }
   }
 
-  const recent = [...completions].reverse().slice(0, 10);
+  const recent = [...completions].reverse().slice(0, 8);
 
   return (
     <>
-      <button className="ghost" onClick={onBack}>
-        ← Back
-      </button>
+      {back}
 
       <header className="page-header">
-        <div>
+        <div className="title-block">
+          {summary.skill && <p className="eyebrow">{summary.skill}</p>}
           <h1>{summary.name}</h1>
-          {summary.skill && <span className="skill-tag">{summary.skill}</span>}
-          {summary.description && <p className="muted">{summary.description}</p>}
+          {summary.description && <p className="muted description">{summary.description}</p>}
         </div>
-        <div className="row">
-          <button className="secondary" onClick={() => setEditing(true)}>
-            Edit
+        <div className="actions">
+          <button
+            className="btn icon"
+            onClick={() => setEditing(true)}
+            title="Edit habit"
+            aria-label="Edit habit"
+          >
+            <PencilIcon size={16} />
           </button>
-          <button className="danger" onClick={remove}>
-            Delete
+          <button
+            className="btn icon danger"
+            onClick={remove}
+            title="Delete habit"
+            aria-label="Delete habit"
+          >
+            <TrashIcon size={16} />
+          </button>
+          <button
+            className={`btn ${summary.completedToday ? "success" : "primary"}`}
+            disabled={busy}
+            onClick={toggle}
+          >
+            <CheckIcon size={16} strokeWidth={2.5} />
+            {summary.completedToday ? "Completed" : "Complete today"}
           </button>
         </div>
       </header>
@@ -97,25 +125,25 @@ export function HabitDetails({ id, today, onBack }: Props) {
 
       <div className="stats">
         <div className="stat">
-          <span className="muted small">Current streak</span>
-          <StreakBadge days={summary.currentStreak} label="days" />
+          <span className="stat-icon fire">
+            <FlameIcon size={18} />
+          </span>
+          <span className="stat-value">{summary.currentStreak}</span>
+          <span className="stat-label">Current streak</span>
         </div>
         <div className="stat">
-          <span className="muted small">Longest streak</span>
-          <strong>{summary.longestStreak} days</strong>
+          <span className="stat-icon gold">
+            <TrophyIcon size={18} />
+          </span>
+          <span className="stat-value">{summary.longestStreak}</span>
+          <span className="stat-label">Longest streak</span>
         </div>
         <div className="stat">
-          <span className="muted small">Total completions</span>
-          <strong>{summary.totalCompletions}</strong>
-        </div>
-        <div className="stat">
-          <button
-            className={summary.completedToday ? "secondary" : "primary"}
-            disabled={busy}
-            onClick={toggle}
-          >
-            {summary.completedToday ? "✓ Done · Undo" : "Complete today"}
-          </button>
+          <span className="stat-icon accent">
+            <ChartIcon size={18} />
+          </span>
+          <span className="stat-value">{summary.totalCompletions}</span>
+          <span className="stat-label">Total completions</span>
         </div>
       </div>
 
@@ -124,20 +152,26 @@ export function HabitDetails({ id, today, onBack }: Props) {
           <Calendar completions={completions} today={today} />
         </section>
         <section className="panel">
-          <h2>Recent completions</h2>
+          <div className="panel-header">
+            <h2>Recent activity</h2>
+          </div>
           {recent.length === 0 ? (
-            <p className="muted">Nothing yet.</p>
+            <p className="muted small">No completions yet.</p>
           ) : (
             <ul className="history">
               {recent.map((d) => (
                 <li key={d}>
-                  ✓{" "}
-                  {parseIsoDate(d).toLocaleDateString(undefined, {
-                    weekday: "short",
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  })}
+                  <span className="history-dot">
+                    <CheckIcon size={12} strokeWidth={3} />
+                  </span>
+                  <span>
+                    {parseIsoDate(d).toLocaleDateString(undefined, {
+                      weekday: "short",
+                      day: "numeric",
+                      month: "short",
+                    })}
+                  </span>
+                  <span className="muted tiny">{d === today ? "Today" : ""}</span>
                 </li>
               ))}
             </ul>

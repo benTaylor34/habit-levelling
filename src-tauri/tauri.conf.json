@@ -14,7 +14,11 @@
       {
         "title": "Habit Levelling",
         "width": 960,
-        "height": 760
+        "height": 760,
+        "minWidth": 520,
+        "minHeight": 480,
+        "theme": "Dark",
+        "backgroundColor": "#0a0b0f"
       }
     ],
     "security": {

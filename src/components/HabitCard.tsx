@@ -1,4 +1,5 @@
 import type { HabitSummary } from "../lib/types";
+import { CheckIcon } from "./Icons";
 import { StreakBadge } from "./StreakBadge";
 
 interface Props {
@@ -20,27 +21,37 @@ export function HabitCard({ habit, busy, onToggle, onOpen }: Props) {
 
   return (
     <article className={`habit-card ${habit.completedToday ? "done" : ""}`}>
-      <button className="habit-main" onClick={() => onOpen(habit.id)}>
-        <div className="habit-title">
-          <h3>{habit.name}</h3>
-          {habit.skill && <span className="skill-tag">{habit.skill}</span>}
-        </div>
-        <StreakBadge days={habit.currentStreak} />
-        <div className="week-strip" aria-label="Last 7 days">
-          {habit.recentDays.map((done, i) => (
-            <span key={i} className={`week-day ${done ? "filled" : ""}`}>
-              {labels[i]}
-            </span>
-          ))}
-        </div>
-      </button>
       <button
-        className={habit.completedToday ? "secondary" : "primary"}
+        className="check"
+        aria-pressed={habit.completedToday}
+        aria-label={habit.completedToday ? `Undo ${habit.name}` : `Complete ${habit.name}`}
+        title={habit.completedToday ? "Completed today · click to undo" : "Mark complete"}
         disabled={busy}
         onClick={() => onToggle(habit)}
       >
-        {habit.completedToday ? "✓ Done · Undo" : "Complete"}
+        <CheckIcon size={16} strokeWidth={3} />
       </button>
+
+      <button className="habit-body" onClick={() => onOpen(habit.id)}>
+        <span className="habit-name">{habit.name}</span>
+        <span className="habit-meta">
+          <StreakBadge days={habit.currentStreak} />
+          {habit.skill && <span className="skill-tag">{habit.skill}</span>}
+        </span>
+      </button>
+
+      <div className="week" aria-label="Last 7 days">
+        {habit.recentDays.map((done, i) => (
+          <div key={i} className="week-col">
+            <span
+              className={`week-dot ${done ? "filled" : ""} ${
+                i === habit.recentDays.length - 1 ? "today" : ""
+              }`}
+            />
+            <span className="week-label">{labels[i]}</span>
+          </div>
+        ))}
+      </div>
     </article>
   );
 }
