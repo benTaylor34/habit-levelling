@@ -140,3 +140,7 @@ Two design rules keep the data trustworthy:
 | `src/pages/` | Today (dashboard), habit details and Analysis pages |
 | `src/components/` | Habit cards, forms, stat panel, charts and heatmap |
 | `src/lib/` | Typed command wrappers, shared types and date helpers |
+
+## Licence
+
+[MIT](LICENSE): free to use, modify and share, including commercially, as long as the copyright and licence notice are kept.
