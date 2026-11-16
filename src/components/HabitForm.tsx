@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { Habit, HabitInput } from "../lib/types";
-import { SUGGESTED_SKILLS } from "../lib/types";
+import type { Habit, HabitInput, StatKey } from "../lib/types";
+import { StatPicker } from "./StatPicker";
 
 interface Props {
   initial?: Habit;
@@ -11,7 +11,14 @@ interface Props {
 export function HabitForm({ initial, onSubmit, onCancel }: Props) {
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
-  const [skill, setSkill] = useState(initial?.skill ?? "");
+  const [primary, setPrimary] = useState<StatKey | null>(initial?.primaryStat ?? null);
+  const [secondary, setSecondary] = useState<StatKey | null>(initial?.secondaryStat ?? null);
+
+  function pickPrimary(stat: StatKey | null) {
+    setPrimary(stat);
+    // A secondary stat needs a primary, and can't be the same stat.
+    if (stat === null || stat === secondary) setSecondary(null);
+  }
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,7 +30,8 @@ export function HabitForm({ initial, onSubmit, onCancel }: Props) {
       await onSubmit({
         name,
         description: description || null,
-        skill: skill || null,
+        primaryStat: primary,
+        secondaryStat: secondary,
       });
     } catch (err) {
       setError(String(err));
@@ -53,7 +61,7 @@ export function HabitForm({ initial, onSubmit, onCancel }: Props) {
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Read 20 pages"
+            placeholder="Study for an hour"
             required
           />
         </label>
@@ -67,20 +75,21 @@ export function HabitForm({ initial, onSubmit, onCancel }: Props) {
           />
         </label>
 
-        <label>
-          <span>Skill <span className="muted">(optional)</span></span>
-          <input
-            list="skill-options"
-            value={skill}
-            onChange={(e) => setSkill(e.target.value)}
-            placeholder="Knowledge"
-          />
-          <datalist id="skill-options">
-            {SUGGESTED_SKILLS.map((s) => (
-              <option key={s} value={s} />
-            ))}
-          </datalist>
-        </label>
+        <StatPicker
+          label="Primary stat"
+          hint="(full XP)"
+          value={primary}
+          onChange={pickPrimary}
+        />
+
+        <StatPicker
+          label="Secondary stat"
+          hint="(half XP, optional)"
+          value={secondary}
+          onChange={setSecondary}
+          exclude={primary}
+          disabled={primary === null}
+        />
 
         {error && <p className="error">{error}</p>}
 

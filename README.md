@@ -1,7 +1,7 @@
 # Habit Levelling
 
 A local-first desktop habit tracker. Complete habits daily, keep streaks alive,
-and level up skills. Built with Tauri + Rust + SQLite (SQLx) and a React +
+and level up D&D-style stats. Built with Tauri + Rust + SQLite (SQLx) and a React +
 TypeScript frontend.
 
 ## Run
@@ -15,7 +15,7 @@ npm install
 npm run tauri dev
 ```
 
-Rust tests (streaks, CRUD, completions, skill XP, persistence across restarts):
+Rust tests (streaks, CRUD, completions, stat XP and levels, luck rolls, persistence across restarts):
 
 ```bash
 cd src-tauri && cargo test
@@ -34,14 +34,15 @@ React only renders and calls Tauri commands; all logic lives in Rust.
 | File | Role |
 | --- | --- |
 | `src-tauri/src/commands.rs` | Tauri commands (the frontend's only API); decides "today" in local time |
-| `src-tauri/src/habits.rs` | Habit CRUD, completions, summaries, skill XP queries |
+| `src-tauri/src/habits.rs` | Habit CRUD, completions, summaries, stat XP queries |
 | `src-tauri/src/streaks.rs` | Pure current/longest streak calculation |
-| `src-tauri/src/skills.rs` | XP → level curve |
+| `src-tauri/src/stats.rs` | Stats, XP per completion, Pokémon-style level curve |
+| `src-tauri/src/luck.rs` | Secret Luck stat: streak milestones and dice rolls |
 | `src-tauri/src/db.rs` | SQLite pool + embedded migrations |
 | `src-tauri/migrations/0001_initial.sql` | `habits`, `habit_completions` (`UNIQUE(habit_id, date)`) |
 | `src/lib/tauri.ts` | Typed wrappers for the commands |
 | `src/pages/` | Dashboard, HabitDetails |
-| `src/components/` | HabitCard, HabitForm, Calendar, StreakBadge, SkillPanel |
+| `src/components/` | HabitCard, HabitForm, Calendar, StreakBadge, StatPanel, StatPicker, LogForm, LuckToast |
 
 Streaks and XP are never stored; they're derived from completion history.
 Completions are stored as local calendar dates (`YYYY-MM-DD`). If today isn't

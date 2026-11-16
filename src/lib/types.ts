@@ -3,11 +3,24 @@
 /** A local calendar date, "YYYY-MM-DD". */
 export type IsoDate = string;
 
+/** The six trainable stats, plus the secret Luck stat. */
+export type StatKey =
+  | "strength"
+  | "dexterity"
+  | "constitution"
+  | "intelligence"
+  | "wisdom"
+  | "charisma"
+  | "luck";
+
 export interface Habit {
   id: number;
   name: string;
   description: string | null;
-  skill: string | null;
+  /** Gets the full XP of each completion. */
+  primaryStat: StatKey | null;
+  /** Gets half the XP of each completion. */
+  secondaryStat: StatKey | null;
   createdAt: string;
   archived: boolean;
 }
@@ -15,7 +28,8 @@ export interface Habit {
 export interface HabitInput {
   name: string;
   description: string | null;
-  skill: string | null;
+  primaryStat: StatKey | null;
+  secondaryStat: StatKey | null;
 }
 
 /** What the user enters when logging a day. */
@@ -52,15 +66,92 @@ export interface HabitDetails {
   completions: Completion[];
 }
 
-export interface SkillProgress {
-  skill: string;
+export interface StatProgress {
+  stat: StatKey;
+  /** Total XP ever earned. */
   xp: number;
   level: number;
+  /** XP since the last level up (the bar resets each level). */
   xpIntoLevel: number;
+  /** XP needed for the next level; 0 at max level. */
   xpForNextLevel: number;
-  /** Consecutive days any habit in this skill was done. */
+  /** Consecutive days any habit training this stat was done. */
   currentStreak: number;
   longestStreak: number;
+}
+
+export interface LuckWin {
+  xp: number;
+  streak: number;
+}
+
+export interface LogResult {
+  summary: HabitSummary;
+  /** Set only when a streak milestone's Luck roll won. */
+  luck: LuckWin | null;
+}
+
+export interface XpPreview {
+  primary: number;
+  secondary: number;
+}
+
+export interface StatInfo {
+  key: StatKey;
+  name: string;
+  abbr: string;
+  description: string;
+}
+
+/** Display copy for each stat, D&D style. Trainable stats first, in order. */
+export const STATS: StatInfo[] = [
+  {
+    key: "strength",
+    name: "Strength",
+    abbr: "STR",
+    description: "Raw physical power. Lifting, carrying and pushing your limits. Trained by weightlifting, climbing and hard physical work.",
+  },
+  {
+    key: "dexterity",
+    name: "Dexterity",
+    abbr: "DEX",
+    description: "Agility, reflexes and balance. Quick feet and steady hands. Trained by running, sports, dance, instruments and crafts.",
+  },
+  {
+    key: "constitution",
+    name: "Constitution",
+    abbr: "CON",
+    description: "Health, stamina and endurance. The grit to keep going. Trained by cardio, good sleep, nutrition and cold showers.",
+  },
+  {
+    key: "intelligence",
+    name: "Intelligence",
+    abbr: "INT",
+    description: "Reasoning, memory and learning. The power of the mind. Trained by studying, reading, coding and learning languages.",
+  },
+  {
+    key: "wisdom",
+    name: "Wisdom",
+    abbr: "WIS",
+    description: "Insight, perception and self-awareness. Knowing what matters. Trained by meditation, journaling and reflection.",
+  },
+  {
+    key: "charisma",
+    name: "Charisma",
+    abbr: "CHA",
+    description: "Confidence and force of personality. Trained by socialising, public speaking, performing and creative expression.",
+  },
+];
+
+export const LUCK: StatInfo = {
+  key: "luck",
+  name: "Luck",
+  abbr: "LCK",
+  description: "Fortune favours the consistent. Luck can't be trained; it may strike when a streak reaches a milestone.",
+};
+
+export function statInfo(key: StatKey): StatInfo {
+  return key === "luck" ? LUCK : STATS.find((s) => s.key === key)!;
 }
 
 /** Display names for difficulty 1–5 (the XP multipliers live in Rust). */
@@ -69,14 +160,3 @@ export const DIFFICULTY_LABELS = ["Easy", "Moderate", "Hard", "Very hard", "Brut
 export function difficultyLabel(difficulty: number): string {
   return DIFFICULTY_LABELS[difficulty - 1] ?? "—";
 }
-
-/** Suggested skills for the form. Users can also type their own. */
-export const SUGGESTED_SKILLS = [
-  "Fitness",
-  "Knowledge",
-  "Mental",
-  "Creativity",
-  "Technical",
-  "Social",
-  "Discipline",
-];

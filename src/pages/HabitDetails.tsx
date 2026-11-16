@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage } from "../lib/tauri";
-import type { CompletionInput, HabitDetails as Details, IsoDate } from "../lib/types";
-import { difficultyLabel } from "../lib/types";
+import type { CompletionInput, HabitDetails as Details, IsoDate, LuckWin } from "../lib/types";
+import { difficultyLabel, statInfo } from "../lib/types";
 import { formatMinutes, parseIsoDate } from "../lib/dates";
 import { Calendar } from "../components/Calendar";
 import { HabitForm } from "../components/HabitForm";
 import { LogForm } from "../components/LogForm";
+import { LuckToast } from "../components/LuckToast";
 import {
   ArrowLeftIcon,
   BoltIcon,
@@ -28,6 +29,7 @@ export function HabitDetails({ id, today, onBack }: Props) {
   const [details, setDetails] = useState<Details | null>(null);
   const [editing, setEditing] = useState(false);
   const [logging, setLogging] = useState(false);
+  const [luck, setLuck] = useState<LuckWin | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,8 +63,9 @@ export function HabitDetails({ id, today, onBack }: Props) {
   const { summary, completions } = details;
 
   async function logToday(log: CompletionInput) {
-    await api.completeToday(id, log);
+    const result = await api.completeToday(id, log);
     setLogging(false);
+    setLuck(result.luck);
     await load();
   }
 
@@ -99,7 +102,14 @@ export function HabitDetails({ id, today, onBack }: Props) {
 
       <header className="page-header">
         <div className="title-block">
-          {summary.skill && <p className="eyebrow">{summary.skill}</p>}
+          {summary.primaryStat && (
+            <p className="eyebrow">
+              {statInfo(summary.primaryStat).name}
+              {summary.secondaryStat && (
+                <span className="eyebrow-secondary"> · {statInfo(summary.secondaryStat).name}</span>
+              )}
+            </p>
+          )}
           <h1>{summary.name}</h1>
           {summary.description && <p className="muted description">{summary.description}</p>}
         </div>
@@ -227,12 +237,14 @@ export function HabitDetails({ id, today, onBack }: Props) {
 
       {logging && (
         <LogForm
-          habitName={summary.name}
+          habit={summary}
           initial={summary.todayLog}
           onCancel={() => setLogging(false)}
           onSubmit={logToday}
         />
       )}
+
+      {luck && <LuckToast win={luck} habitName={summary.name} onClose={() => setLuck(null)} />}
 
       {editing && (
         <HabitForm

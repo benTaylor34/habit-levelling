@@ -4,6 +4,8 @@
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
+use crate::stats::Stat;
+
 /// A row of the `habits` table.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
@@ -11,7 +13,10 @@ pub struct Habit {
     pub id: i64,
     pub name: String,
     pub description: Option<String>,
-    pub skill: Option<String>,
+    /// Stat that gets the full XP of each completion.
+    pub primary_stat: Option<Stat>,
+    /// Stat that gets half the XP of each completion.
+    pub secondary_stat: Option<Stat>,
     pub created_at: String,
     pub archived: bool,
 }
@@ -22,7 +27,8 @@ pub struct Habit {
 pub struct HabitInput {
     pub name: String,
     pub description: Option<String>,
-    pub skill: Option<String>,
+    pub primary_stat: Option<Stat>,
+    pub secondary_stat: Option<Stat>,
 }
 
 /// What the user enters when logging a completion.
@@ -73,19 +79,46 @@ pub struct HabitDetails {
     pub completions: Vec<Completion>,
 }
 
-/// XP and streaks for one skill, derived from the completions of every
-/// habit tagged with it.
+/// Level, XP bar and streaks for one stat, derived from the completions of
+/// every habit that trains it (as primary or secondary).
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct SkillProgress {
-    pub skill: String,
+pub struct StatProgress {
+    pub stat: Stat,
+    /// Total XP ever earned in this stat.
     pub xp: u32,
     pub level: u32,
-    /// XP earned inside the current level.
+    /// XP earned since the last level up (the XP bar resets to 0 each level).
     pub xp_into_level: u32,
-    /// XP needed to go from this level to the next.
+    /// XP needed to go from this level to the next (0 at max level).
     pub xp_for_next_level: u32,
-    /// Consecutive days on which any habit in this skill was completed.
+    /// Consecutive days on which any habit training this stat was done.
     pub current_streak: u32,
     pub longest_streak: u32,
+}
+
+/// Luck XP won when a streak milestone came up lucky.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LuckWin {
+    pub xp: u32,
+    /// The streak length that triggered the roll.
+    pub streak: u32,
+}
+
+/// Result of logging a habit for today.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogResult {
+    pub summary: HabitSummary,
+    /// Set only when this log hit a streak milestone *and* the roll won.
+    pub luck: Option<LuckWin>,
+}
+
+/// XP a log would give each of a habit's stats (for the form's preview).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct XpPreview {
+    pub primary: u32,
+    pub secondary: u32,
 }

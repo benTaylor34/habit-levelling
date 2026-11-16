@@ -101,3 +101,13 @@ export const UndoIcon = (p: IconProps) => (
     <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
   </Icon>
 );
+
+export const CloverIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="9" cy="9" r="3" />
+    <circle cx="15" cy="9" r="3" />
+    <circle cx="9" cy="15" r="3" />
+    <circle cx="15" cy="15" r="3" />
+    <path d="m16.5 16.5 4 4.5" />
+  </Icon>
+);

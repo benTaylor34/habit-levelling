@@ -7,9 +7,11 @@ use tauri::State;
 
 use crate::error::AppResult;
 use crate::models::{
-    CompletionInput, Habit, HabitDetails, HabitInput, HabitSummary, SkillProgress,
+    CompletionInput, Habit, HabitDetails, HabitInput, HabitSummary, LogResult, StatProgress,
+    XpPreview,
 };
-use crate::{habits, skills};
+use crate::stats;
+use crate::habits;
 
 /// "Today" is the user's *local* calendar date, not a UTC timestamp.
 fn today() -> NaiveDate {
@@ -50,15 +52,19 @@ pub async fn delete_habit(pool: State<'_, SqlitePool>, id: i64) -> AppResult<()>
     habits::delete(&pool, id).await
 }
 
+/// Log today for a habit. May also win Luck XP if the streak hit a milestone.
 #[tauri::command]
 pub async fn complete_habit_today(
     pool: State<'_, SqlitePool>,
     id: i64,
     log: CompletionInput,
-) -> AppResult<HabitSummary> {
+) -> AppResult<LogResult> {
     let today = today();
-    habits::complete(&pool, id, today, log).await?;
-    habits::summary(&pool, id, today).await
+    let luck = habits::complete(&pool, id, today, log).await?;
+    Ok(LogResult {
+        summary: habits::summary(&pool, id, today).await?,
+        luck,
+    })
 }
 
 #[tauri::command]
@@ -69,12 +75,18 @@ pub async fn undo_habit_today(pool: State<'_, SqlitePool>, id: i64) -> AppResult
 }
 
 #[tauri::command]
-pub async fn get_skill_progress(pool: State<'_, SqlitePool>) -> AppResult<Vec<SkillProgress>> {
-    habits::skill_progress(&pool, today()).await
+pub async fn get_stats(pool: State<'_, SqlitePool>) -> AppResult<Vec<StatProgress>> {
+    habits::stat_progress(&pool, today()).await
 }
 
-/// XP a log would earn, so the form can preview it without duplicating the formula.
+/// XP a log would give the habit's primary and secondary stats, so the form
+/// can preview it without duplicating the formula.
 #[tauri::command]
-pub fn preview_xp(minutes: u32, difficulty: u32) -> u32 {
-    skills::completion_xp(minutes, difficulty)
+pub fn preview_xp(minutes: u32, difficulty: u32) -> XpPreview {
+    let primary = stats::completion_xp(minutes, difficulty);
+    XpPreview {
+        primary,
+        secondary: stats::secondary_xp(primary),
+    }
 }
+

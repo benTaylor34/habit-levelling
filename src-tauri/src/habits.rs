@@ -10,24 +10,43 @@ use sqlx::SqlitePool;
 
 use crate::error::{AppError, AppResult};
 use crate::models::{
-    Completion, CompletionInput, Habit, HabitDetails, HabitInput, HabitSummary, SkillProgress,
+    Completion, CompletionInput, Habit, HabitDetails, HabitInput, HabitSummary, LuckWin,
+    StatProgress,
 };
-use crate::{skills, streaks};
+use crate::stats::{self, Stat};
+use crate::{luck, streaks};
 
 const DATE_FORMAT: &str = "%Y-%m-%d";
-const HABIT_COLUMNS: &str = "id, name, description, skill, created_at, archived";
+const HABIT_COLUMNS: &str =
+    "id, name, description, primary_stat, secondary_stat, created_at, archived";
 
-/// Trim the input and turn empty optional strings into NULL.
+/// Trim the input, turn empty optional strings into NULL and check the stats.
 fn clean(input: HabitInput) -> AppResult<HabitInput> {
     let name = input.name.trim().to_string();
     if name.is_empty() {
         return Err(AppError::Invalid("Habit name can't be empty".into()));
     }
+    for stat in [input.primary_stat, input.secondary_stat].into_iter().flatten() {
+        if !Stat::TRAINABLE.contains(&stat) {
+            return Err(AppError::Invalid("Luck can't be trained directly".into()));
+        }
+    }
+    match (input.primary_stat, input.secondary_stat) {
+        (None, Some(_)) => {
+            return Err(AppError::Invalid("Pick a primary stat before a secondary one".into()))
+        }
+        (Some(a), Some(b)) if a == b => {
+            return Err(AppError::Invalid(
+                "Primary and secondary stats must be different".into(),
+            ))
+        }
+        _ => {}
+    }
     let opt = |s: Option<String>| s.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
     Ok(HabitInput {
         name,
         description: opt(input.description),
-        skill: opt(input.skill),
+        ..input
     })
 }
 
@@ -48,12 +67,14 @@ pub async fn get(pool: &SqlitePool, id: i64) -> AppResult<Habit> {
 pub async fn create(pool: &SqlitePool, input: HabitInput) -> AppResult<Habit> {
     let input = clean(input)?;
     let sql = format!(
-        "INSERT INTO habits (name, description, skill) VALUES (?, ?, ?) RETURNING {HABIT_COLUMNS}"
+        "INSERT INTO habits (name, description, primary_stat, secondary_stat)
+         VALUES (?, ?, ?, ?) RETURNING {HABIT_COLUMNS}"
     );
     Ok(sqlx::query_as(&sql)
         .bind(input.name)
         .bind(input.description)
-        .bind(input.skill)
+        .bind(input.primary_stat)
+        .bind(input.secondary_stat)
         .fetch_one(pool)
         .await?)
 }
@@ -61,12 +82,14 @@ pub async fn create(pool: &SqlitePool, input: HabitInput) -> AppResult<Habit> {
 pub async fn update(pool: &SqlitePool, id: i64, input: HabitInput) -> AppResult<Habit> {
     let input = clean(input)?;
     let sql = format!(
-        "UPDATE habits SET name = ?, description = ?, skill = ? WHERE id = ? RETURNING {HABIT_COLUMNS}"
+        "UPDATE habits SET name = ?, description = ?, primary_stat = ?, secondary_stat = ?
+         WHERE id = ? RETURNING {HABIT_COLUMNS}"
     );
     sqlx::query_as(&sql)
         .bind(input.name)
         .bind(input.description)
-        .bind(input.skill)
+        .bind(input.primary_stat)
+        .bind(input.secondary_stat)
         .bind(id)
         .fetch_optional(pool)
         .await?
@@ -85,33 +108,63 @@ pub async fn delete(pool: &SqlitePool, id: i64) -> AppResult<()> {
     Ok(())
 }
 
-/// Log the habit as done on `date` with the time spent and difficulty.
-/// Logging again on the same day replaces that day's entry (UNIQUE(habit_id, date)).
+/// Log the habit as done on `date` with the time spent and difficulty, rolling
+/// for Luck if this completes a streak milestone.
 pub async fn complete(
     pool: &SqlitePool,
     id: i64,
     date: NaiveDate,
     log: CompletionInput,
-) -> AppResult<()> {
-    if log.minutes > skills::MAX_MINUTES {
+) -> AppResult<Option<LuckWin>> {
+    complete_with_roll(pool, id, date, log, luck::roll_d100()).await
+}
+
+/// `complete` with an explicit d100 roll (0–99), so tests can control luck.
+/// Logging again on the same day replaces that day's entry (UNIQUE(habit_id, date))
+/// and never re-rolls: each habit gets one Luck roll per milestone day.
+pub async fn complete_with_roll(
+    pool: &SqlitePool,
+    id: i64,
+    date: NaiveDate,
+    log: CompletionInput,
+    roll: u32,
+) -> AppResult<Option<LuckWin>> {
+    if log.minutes > stats::MAX_MINUTES {
         return Err(AppError::Invalid("Time spent can't be more than 24 hours".into()));
     }
-    if !(skills::MIN_DIFFICULTY..=skills::MAX_DIFFICULTY).contains(&log.difficulty) {
+    if !(stats::MIN_DIFFICULTY..=stats::MAX_DIFFICULTY).contains(&log.difficulty) {
         return Err(AppError::Invalid("Difficulty must be between 1 and 5".into()));
     }
     get(pool, id).await?; // clear NotFound error instead of an FK failure
+    let date_str = date.format(DATE_FORMAT).to_string();
     sqlx::query(
         "INSERT INTO habit_completions (habit_id, date, minutes, difficulty) VALUES (?, ?, ?, ?)
          ON CONFLICT (habit_id, date) DO UPDATE SET
              minutes = excluded.minutes, difficulty = excluded.difficulty",
     )
     .bind(id)
-    .bind(date.format(DATE_FORMAT).to_string())
+    .bind(&date_str)
     .bind(log.minutes)
     .bind(log.difficulty)
     .execute(pool)
     .await?;
-    Ok(())
+
+    let streak = streaks::current_streak(&dates_of(&completions(pool, id).await?), date);
+    let Some(milestone) = luck::milestone(streak) else {
+        return Ok(None);
+    };
+    let xp = luck::award(milestone, roll);
+    let inserted = sqlx::query(
+        "INSERT OR IGNORE INTO luck_rolls (habit_id, date, streak, xp) VALUES (?, ?, ?, ?)",
+    )
+    .bind(id)
+    .bind(&date_str)
+    .bind(streak)
+    .bind(xp)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok((inserted == 1 && xp > 0).then_some(LuckWin { xp, streak }))
 }
 
 /// Remove the completion on `date`, if any.
@@ -135,7 +188,7 @@ fn to_completion(date: &str, minutes: i64, difficulty: i64) -> AppResult<Complet
         date: parse_date(date)?,
         minutes,
         difficulty,
-        xp: skills::completion_xp(minutes, difficulty),
+        xp: stats::completion_xp(minutes, difficulty),
     })
 }
 
@@ -195,38 +248,52 @@ pub async fn details(pool: &SqlitePool, id: i64, today: NaiveDate) -> AppResult<
     })
 }
 
-/// XP and streaks per skill, from every completion of the skill's habits.
-/// A skill's streak counts days on which *any* of its habits was done.
-/// Skills with habits but no completions yet show up with 0 XP.
-pub async fn skill_progress(pool: &SqlitePool, today: NaiveDate) -> AppResult<Vec<SkillProgress>> {
-    let rows: Vec<(String, Option<String>, Option<i64>, Option<i64>)> = sqlx::query_as(
-        "SELECT h.skill, c.date, c.minutes, c.difficulty
+/// Level, XP and streaks for all six stats, plus Luck once it has any XP.
+/// A habit's primary stat gets each completion's full XP and its secondary
+/// stat gets half. A stat's streak counts days on which *any* habit training
+/// it was done.
+pub async fn stat_progress(pool: &SqlitePool, today: NaiveDate) -> AppResult<Vec<StatProgress>> {
+    let rows: Vec<(Option<Stat>, Option<Stat>, String, i64, i64)> = sqlx::query_as(
+        "SELECT h.primary_stat, h.secondary_stat, c.date, c.minutes, c.difficulty
          FROM habits h
-         LEFT JOIN habit_completions c ON c.habit_id = h.id
-         WHERE h.skill IS NOT NULL AND h.archived = 0",
+         JOIN habit_completions c ON c.habit_id = h.id
+         WHERE h.archived = 0 AND h.primary_stat IS NOT NULL",
     )
     .fetch_all(pool)
     .await?;
 
-    let mut by_skill: BTreeMap<String, Vec<Completion>> = BTreeMap::new();
-    for (skill, date, minutes, difficulty) in rows {
-        let entry = by_skill.entry(skill).or_default();
-        if let Some(date) = date {
-            entry.push(to_completion(&date, minutes.unwrap_or(0), difficulty.unwrap_or(1))?);
+    let mut xp: BTreeMap<Stat, u32> = BTreeMap::new();
+    let mut dates: BTreeMap<Stat, Vec<NaiveDate>> = BTreeMap::new();
+    for (primary, secondary, date, minutes, difficulty) in rows {
+        let c = to_completion(&date, minutes, difficulty)?;
+        let gains = [
+            primary.map(|s| (s, c.xp)),
+            secondary.map(|s| (s, stats::secondary_xp(c.xp))),
+        ];
+        for (stat, gained) in gains.into_iter().flatten() {
+            *xp.entry(stat).or_default() += gained;
+            dates.entry(stat).or_default().push(c.date);
         }
     }
 
-    let mut out: Vec<SkillProgress> = by_skill
-        .into_iter()
-        .map(|(skill, completions)| {
-            let dates = dates_of(&completions);
-            let mut p = skills::progress(skill, completions.iter().map(|c| c.xp).sum());
-            p.current_streak = streaks::current_streak(&dates, today);
-            p.longest_streak = streaks::longest_streak(&dates);
+    let mut out: Vec<StatProgress> = Stat::TRAINABLE
+        .iter()
+        .map(|&stat| {
+            let days = dates.get(&stat).map(Vec::as_slice).unwrap_or_default();
+            let mut p = stats::progress(stat, xp.get(&stat).copied().unwrap_or(0));
+            p.current_streak = streaks::current_streak(days, today);
+            p.longest_streak = streaks::longest_streak(days);
             p
         })
         .collect();
-    out.sort_by(|a, b| b.xp.cmp(&a.xp).then_with(|| a.skill.cmp(&b.skill)));
+
+    // Luck stays secret until the first lucky roll.
+    let (luck_xp,): (i64,) = sqlx::query_as("SELECT COALESCE(SUM(xp), 0) FROM luck_rolls")
+        .fetch_one(pool)
+        .await?;
+    if luck_xp > 0 {
+        out.push(stats::progress(Stat::Luck, luck_xp as u32));
+    }
     Ok(out)
 }
 
@@ -234,6 +301,7 @@ pub async fn skill_progress(pool: &SqlitePool, today: NaiveDate) -> AppResult<Ve
 mod tests {
     use super::*;
     use crate::db;
+    use crate::stats::Stat::*;
 
     fn d(s: &str) -> NaiveDate {
         NaiveDate::parse_from_str(s, DATE_FORMAT).unwrap()
@@ -246,21 +314,27 @@ mod tests {
         CompletionInput { minutes, difficulty }
     }
 
-    fn input(name: &str, skill: Option<&str>) -> HabitInput {
+    fn input(name: &str, primary: Option<Stat>, secondary: Option<Stat>) -> HabitInput {
         HabitInput {
             name: name.into(),
             description: None,
-            skill: skill.map(Into::into),
+            primary_stat: primary,
+            secondary_stat: secondary,
         }
+    }
+
+    fn stat<'a>(all: &'a [StatProgress], stat: Stat) -> &'a StatProgress {
+        all.iter().find(|p| p.stat == stat).unwrap()
     }
 
     #[tokio::test]
     async fn create_list_edit_delete() {
         let pool = db::test_pool().await;
 
-        let h = create(&pool, input("  Exercise ", Some("Fitness"))).await.unwrap();
+        let h = create(&pool, input("  Exercise ", Some(Strength), Some(Constitution))).await.unwrap();
         assert_eq!(h.name, "Exercise");
-        assert_eq!(h.skill.as_deref(), Some("Fitness"));
+        assert_eq!(h.primary_stat, Some(Strength));
+        assert_eq!(h.secondary_stat, Some(Constitution));
         assert!(!h.archived);
 
         let all = list(&pool).await.unwrap();
@@ -272,14 +346,16 @@ mod tests {
             HabitInput {
                 name: "Run".into(),
                 description: Some("5k".into()),
-                skill: Some("".into()),
+                primary_stat: Some(Dexterity),
+                secondary_stat: None,
             },
         )
         .await
         .unwrap();
         assert_eq!(edited.name, "Run");
         assert_eq!(edited.description.as_deref(), Some("5k"));
-        assert_eq!(edited.skill, None, "empty skill becomes NULL");
+        assert_eq!(edited.primary_stat, Some(Dexterity));
+        assert_eq!(edited.secondary_stat, None);
 
         delete(&pool, h.id).await.unwrap();
         assert!(list(&pool).await.unwrap().is_empty());
@@ -290,7 +366,7 @@ mod tests {
     async fn empty_name_is_rejected() {
         let pool = db::test_pool().await;
         assert!(matches!(
-            create(&pool, input("   ", None)).await,
+            create(&pool, input("   ", None, None)).await,
             Err(AppError::Invalid(_))
         ));
     }
@@ -299,7 +375,7 @@ mod tests {
     async fn logging_twice_a_day_counts_once_and_undo_works() {
         let pool = db::test_pool().await;
         let today = d("2026-11-14");
-        let h = create(&pool, input("Read", None)).await.unwrap();
+        let h = create(&pool, input("Read", None, None)).await.unwrap();
 
         complete(&pool, h.id, today, PLAIN).await.unwrap();
         complete(&pool, h.id, today, PLAIN).await.unwrap();
@@ -318,7 +394,7 @@ mod tests {
     #[tokio::test]
     async fn streaks_from_history() {
         let pool = db::test_pool().await;
-        let h = create(&pool, input("Exercise", None)).await.unwrap();
+        let h = create(&pool, input("Exercise", None, None)).await.unwrap();
         for day in ["2026-11-10", "2026-11-11", "2026-11-13", "2026-11-14"] {
             complete(&pool, h.id, d(day), PLAIN).await.unwrap();
         }
@@ -332,7 +408,7 @@ mod tests {
     #[tokio::test]
     async fn deleting_habit_removes_completions() {
         let pool = db::test_pool().await;
-        let h = create(&pool, input("Exercise", None)).await.unwrap();
+        let h = create(&pool, input("Exercise", None, None)).await.unwrap();
         complete(&pool, h.id, d("2026-11-14"), PLAIN).await.unwrap();
         delete(&pool, h.id).await.unwrap();
         let (n,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM habit_completions")
@@ -355,14 +431,14 @@ mod tests {
     async fn logging_again_replaces_the_days_entry() {
         let pool = db::test_pool().await;
         let today = d("2026-11-14");
-        let h = create(&pool, input("Read", None)).await.unwrap();
+        let h = create(&pool, input("Read", None, None)).await.unwrap();
 
         complete(&pool, h.id, today, log(20, 1)).await.unwrap();
         complete(&pool, h.id, today, log(45, 3)).await.unwrap();
         let s = summary(&pool, h.id, today).await.unwrap();
         assert_eq!(s.total_completions, 1);
         assert_eq!(s.total_minutes, 45);
-        assert_eq!(s.total_xp, skills::completion_xp(45, 3));
+        assert_eq!(s.total_xp, stats::completion_xp(45, 3));
         let today_log = s.today_log.unwrap();
         assert_eq!((today_log.minutes, today_log.difficulty), (45, 3));
     }
@@ -370,7 +446,7 @@ mod tests {
     #[tokio::test]
     async fn invalid_logs_are_rejected() {
         let pool = db::test_pool().await;
-        let h = create(&pool, input("Read", None)).await.unwrap();
+        let h = create(&pool, input("Read", None, None)).await.unwrap();
         let today = d("2026-11-14");
         for bad in [log(0, 0), log(0, 6), log(24 * 60 + 1, 2)] {
             assert!(matches!(
@@ -382,44 +458,117 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn skill_xp_comes_from_time_and_difficulty() {
+    async fn invalid_stat_choices_are_rejected() {
         let pool = db::test_pool().await;
-        let run = create(&pool, input("Run", Some("Fitness"))).await.unwrap();
-        let gym = create(&pool, input("Gym", Some("Fitness"))).await.unwrap();
-        create(&pool, input("Read", Some("Knowledge"))).await.unwrap();
-        create(&pool, input("Untagged", None)).await.unwrap();
-
-        complete(&pool, run.id, d("2026-11-13"), log(30, 2)).await.unwrap(); // 60
-        complete(&pool, run.id, d("2026-11-14"), PLAIN).await.unwrap(); // 10
-        complete(&pool, gym.id, d("2026-11-14"), log(60, 3)).await.unwrap(); // 140
-
-        let skills = skill_progress(&pool, d("2026-11-14")).await.unwrap();
-        let pairs: Vec<_> = skills.iter().map(|s| (s.skill.as_str(), s.xp)).collect();
-        assert_eq!(pairs, vec![("Fitness", 210), ("Knowledge", 0)]);
-        assert_eq!(skills[0].level, 2);
+        for bad in [
+            input("Same twice", Some(Wisdom), Some(Wisdom)),
+            input("Secondary only", None, Some(Wisdom)),
+            input("Luck", Some(Luck), None),
+            input("Luck 2", Some(Wisdom), Some(Luck)),
+        ] {
+            assert!(matches!(create(&pool, bad).await, Err(AppError::Invalid(_))));
+        }
     }
 
     #[tokio::test]
-    async fn skill_streak_counts_days_any_habit_was_done() {
+    async fn primary_gets_full_xp_and_secondary_gets_half() {
         let pool = db::test_pool().await;
-        let run = create(&pool, input("Run", Some("Fitness"))).await.unwrap();
-        let gym = create(&pool, input("Gym", Some("Fitness"))).await.unwrap();
+        let study = create(&pool, input("Study", Some(Intelligence), Some(Wisdom))).await.unwrap();
+        let lift = create(&pool, input("Lift", Some(Strength), Some(Constitution))).await.unwrap();
+        create(&pool, input("Untagged", None, None)).await.unwrap();
+
+        complete(&pool, study.id, d("2026-11-13"), log(30, 2)).await.unwrap(); // 60
+        complete(&pool, study.id, d("2026-11-14"), log(60, 3)).await.unwrap(); // 140
+        complete(&pool, lift.id, d("2026-11-14"), log(45, 4)).await.unwrap(); // 137
+
+        let all = stat_progress(&pool, d("2026-11-14")).await.unwrap();
+        let xp: Vec<_> = all.iter().map(|p| (p.stat, p.xp)).collect();
+        assert_eq!(
+            xp,
+            vec![
+                (Strength, 137),
+                (Dexterity, 0),
+                (Constitution, 68),
+                (Intelligence, 200),
+                (Wisdom, 100),
+                (Charisma, 0),
+            ],
+            "all six stats are always listed; Luck stays hidden"
+        );
+        // 200 XP: level 2 needs 70, level 3 needs 70 + 190 = 260.
+        let int = stat(&all, Intelligence);
+        assert_eq!((int.level, int.xp_into_level, int.xp_for_next_level), (2, 130, 190));
+        assert_eq!(stat(&all, Dexterity).level, 1);
+    }
+
+    #[tokio::test]
+    async fn stat_streak_counts_days_any_habit_trained_it() {
+        let pool = db::test_pool().await;
+        let run = create(&pool, input("Run", Some(Dexterity), Some(Constitution))).await.unwrap();
+        let swim = create(&pool, input("Swim", Some(Constitution), None)).await.unwrap();
         let today = d("2026-11-14");
 
-        // Run and gym alternate, so neither habit has a long streak on its
-        // own, but Fitness was trained every day from the 11th to the 14th.
+        // Run and swim alternate, so neither habit has a long streak on its
+        // own, but Constitution was trained every day from the 11th to the 14th.
         complete(&pool, run.id, d("2026-11-08"), PLAIN).await.unwrap();
         complete(&pool, run.id, d("2026-11-11"), PLAIN).await.unwrap();
-        complete(&pool, gym.id, d("2026-11-12"), PLAIN).await.unwrap();
+        complete(&pool, swim.id, d("2026-11-12"), PLAIN).await.unwrap();
         complete(&pool, run.id, d("2026-11-13"), PLAIN).await.unwrap();
-        complete(&pool, gym.id, d("2026-11-13"), PLAIN).await.unwrap();
-        complete(&pool, gym.id, d("2026-11-14"), PLAIN).await.unwrap();
+        complete(&pool, swim.id, d("2026-11-14"), PLAIN).await.unwrap();
 
-        let fitness = &skill_progress(&pool, today).await.unwrap()[0];
-        assert_eq!(fitness.current_streak, 4);
-        assert_eq!(fitness.longest_streak, 4);
+        let all = stat_progress(&pool, today).await.unwrap();
+        assert_eq!(stat(&all, Constitution).current_streak, 4);
+        assert_eq!(stat(&all, Constitution).longest_streak, 4);
+        assert_eq!(stat(&all, Dexterity).current_streak, 1);
         assert_eq!(summary(&pool, run.id, today).await.unwrap().current_streak, 1);
-        assert_eq!(summary(&pool, gym.id, today).await.unwrap().current_streak, 3);
+    }
+
+    /// Log `days` consecutive days ending on `last`, rolling `roll` each time.
+    async fn log_streak(pool: &SqlitePool, id: i64, last: NaiveDate, days: u64, roll: u32) {
+        for back in (0..days).rev() {
+            let day = last - chrono::Days::new(back);
+            complete_with_roll(pool, id, day, PLAIN, roll).await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn lucky_roll_on_a_milestone_unlocks_luck() {
+        let pool = db::test_pool().await;
+        let h = create(&pool, input("Read", Some(Intelligence), None)).await.unwrap();
+        let day6 = d("2026-11-06");
+
+        // Days 1–6 miss every roll, but they aren't milestones anyway.
+        log_streak(&pool, h.id, day6, 6, 0).await;
+        assert!(stat_progress(&pool, day6).await.unwrap().iter().all(|p| p.stat != Luck));
+
+        // Day 7 is a weekly milestone; a roll of 0 always wins.
+        let win = complete_with_roll(&pool, h.id, d("2026-11-07"), PLAIN, 0).await.unwrap();
+        assert_eq!(win, Some(LuckWin { xp: luck::WEEKLY.xp, streak: 7 }));
+        let luck_stat = stat(&stat_progress(&pool, d("2026-11-07")).await.unwrap(), Luck).clone();
+        assert_eq!(luck_stat.xp, luck::WEEKLY.xp);
+    }
+
+    #[tokio::test]
+    async fn unlucky_roll_gives_nothing_and_cannot_be_rerolled() {
+        let pool = db::test_pool().await;
+        let h = create(&pool, input("Read", Some(Intelligence), None)).await.unwrap();
+        let day7 = d("2026-11-07");
+
+        log_streak(&pool, h.id, day7, 7, 99).await; // day 7 rolls 99: a miss
+        assert_eq!(complete_with_roll(&pool, h.id, day7, PLAIN, 0).await.unwrap(), None);
+        uncomplete(&pool, h.id, day7).await.unwrap();
+        assert_eq!(complete_with_roll(&pool, h.id, day7, PLAIN, 0).await.unwrap(), None);
+        assert!(stat_progress(&pool, day7).await.unwrap().iter().all(|p| p.stat != Luck));
+    }
+
+    #[tokio::test]
+    async fn monthly_milestone_awards_the_bigger_prize() {
+        let pool = db::test_pool().await;
+        let h = create(&pool, input("Run", Some(Dexterity), None)).await.unwrap();
+        let day30 = d("2026-11-30");
+        log_streak(&pool, h.id, d("2026-11-29"), 29, 99).await;
+        let win = complete_with_roll(&pool, h.id, day30, PLAIN, 0).await.unwrap();
+        assert_eq!(win, Some(LuckWin { xp: luck::MONTHLY.xp, streak: 30 }));
     }
 
     /// Definition of done: data survives closing and reopening the app.
@@ -433,7 +582,7 @@ mod tests {
         let today = d("2026-11-14");
 
         let pool = db::init_pool(&path).await.unwrap();
-        let h = create(&pool, input("Exercise", Some("Fitness"))).await.unwrap();
+        let h = create(&pool, input("Exercise", Some(Strength), None)).await.unwrap();
         complete(&pool, h.id, d("2026-11-13"), PLAIN).await.unwrap();
         complete(&pool, h.id, today, PLAIN).await.unwrap();
         pool.close().await;

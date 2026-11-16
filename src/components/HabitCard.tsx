@@ -1,5 +1,5 @@
 import type { HabitSummary } from "../lib/types";
-import { difficultyLabel } from "../lib/types";
+import { difficultyLabel, statInfo } from "../lib/types";
 import { formatMinutes } from "../lib/dates";
 import { BoltIcon, CheckIcon } from "./Icons";
 import { StreakBadge } from "./StreakBadge";
@@ -38,7 +38,24 @@ export function HabitCard({ habit, busy, onToggle, onOpen }: Props) {
         <span className="habit-name">{habit.name}</span>
         <span className="habit-meta">
           <StreakBadge days={habit.currentStreak} />
-          {habit.skill && <span className="skill-tag">{habit.skill}</span>}
+          {habit.primaryStat && (
+            <span className="stat-tags">
+              <span
+                className={`stat-tag stat-${habit.primaryStat}`}
+                title={`Primary: ${statInfo(habit.primaryStat).name}`}
+              >
+                {statInfo(habit.primaryStat).abbr}
+              </span>
+              {habit.secondaryStat && (
+                <span
+                  className={`stat-tag secondary stat-${habit.secondaryStat}`}
+                  title={`Secondary: ${statInfo(habit.secondaryStat).name}`}
+                >
+                  {statInfo(habit.secondaryStat).abbr}
+                </span>
+              )}
+            </span>
+          )}
           {habit.todayLog && (
             <span className="log-meta" title={difficultyLabel(habit.todayLog.difficulty)}>
               {formatMinutes(habit.todayLog.minutes) || difficultyLabel(habit.todayLog.difficulty)}

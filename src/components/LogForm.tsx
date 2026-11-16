@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { api, errorMessage } from "../lib/tauri";
-import type { Completion, CompletionInput } from "../lib/types";
-import { DIFFICULTY_LABELS } from "../lib/types";
+import type { Completion, CompletionInput, Habit, XpPreview } from "../lib/types";
+import { DIFFICULTY_LABELS, statInfo } from "../lib/types";
 import { formatMinutes } from "../lib/dates";
 import { BoltIcon, CheckIcon } from "./Icons";
 
 interface Props {
-  habitName: string;
+  habit: Habit;
   /** Today's existing log when editing it. */
   initial?: Completion | null;
   onSubmit: (log: CompletionInput) => Promise<void>;
@@ -16,10 +16,10 @@ interface Props {
 const QUICK_MINUTES = [15, 30, 45, 60, 90];
 
 /** Popup shown when completing a habit: time spent + how hard it was. */
-export function LogForm({ habitName, initial, onSubmit, onCancel }: Props) {
+export function LogForm({ habit, initial, onSubmit, onCancel }: Props) {
   const [minutes, setMinutes] = useState(initial ? String(initial.minutes) : "");
   const [difficulty, setDifficulty] = useState(initial?.difficulty ?? 2);
-  const [xp, setXp] = useState<number | null>(null);
+  const [xp, setXp] = useState<XpPreview | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,7 +64,7 @@ export function LogForm({ habitName, initial, onSubmit, onCancel }: Props) {
         <div>
           <h2>{initial ? "Edit today's log" : "Nice work!"}</h2>
           <p className="muted small">
-            How did <strong className="text">{habitName}</strong> go today?
+            How did <strong className="text">{habit.name}</strong> go today?
           </p>
         </div>
 
@@ -128,7 +128,21 @@ export function LogForm({ habitName, initial, onSubmit, onCancel }: Props) {
 
         <div className="modal-actions log-actions">
           <span className="xp-preview" aria-live="polite">
-            <BoltIcon size={16} />+{xp ?? "…"} XP
+            <BoltIcon size={16} />
+            {habit.primaryStat ? (
+              <>
+                <span className={`stat-gain stat-${habit.primaryStat}`}>
+                  +{xp?.primary ?? "…"} {statInfo(habit.primaryStat).abbr}
+                </span>
+                {habit.secondaryStat && (
+                  <span className={`stat-gain stat-${habit.secondaryStat}`}>
+                    +{xp?.secondary ?? "…"} {statInfo(habit.secondaryStat).abbr}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span>+{xp?.primary ?? "…"} XP</span>
+            )}
           </span>
           <button type="button" className="btn ghost" onClick={onCancel}>
             Cancel

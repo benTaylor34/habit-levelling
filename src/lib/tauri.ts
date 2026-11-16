@@ -8,7 +8,9 @@ import type {
   HabitInput,
   HabitSummary,
   IsoDate,
-  SkillProgress,
+  LogResult,
+  StatProgress,
+  XpPreview,
 } from "./types";
 
 export const api = {
@@ -20,10 +22,10 @@ export const api = {
     invoke<Habit>("update_habit", { id, input }),
   deleteHabit: (id: number) => invoke<void>("delete_habit", { id }),
   completeToday: (id: number, log: CompletionInput) =>
-    invoke<HabitSummary>("complete_habit_today", { id, log }),
+    invoke<LogResult>("complete_habit_today", { id, log }),
   undoToday: (id: number) => invoke<HabitSummary>("undo_habit_today", { id }),
-  getSkillProgress: () => invoke<SkillProgress[]>("get_skill_progress"),
-  previewXp: (log: CompletionInput) => invoke<number>("preview_xp", { ...log }),
+  getStats: () => invoke<StatProgress[]>("get_stats"),
+  previewXp: (log: CompletionInput) => invoke<XpPreview>("preview_xp", { ...log }),
 };
 
 /** Rust errors arrive as plain strings. */

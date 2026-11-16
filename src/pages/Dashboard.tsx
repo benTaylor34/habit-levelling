@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage } from "../lib/tauri";
-import type { CompletionInput, HabitSummary, IsoDate, SkillProgress } from "../lib/types";
+import type {
+  CompletionInput,
+  HabitSummary,
+  IsoDate,
+  LuckWin,
+  StatProgress,
+} from "../lib/types";
 import { formatLong } from "../lib/dates";
 import { HabitCard } from "../components/HabitCard";
 import { HabitForm } from "../components/HabitForm";
 import { LogForm } from "../components/LogForm";
-import { SkillPanel } from "../components/SkillPanel";
+import { LuckToast } from "../components/LuckToast";
+import { StatPanel } from "../components/StatPanel";
 import { PlusIcon } from "../components/Icons";
 
 interface Props {
@@ -39,7 +46,8 @@ function ProgressRing({ done, total }: { done: number; total: number }) {
 
 export function Dashboard({ today, onOpen }: Props) {
   const [habits, setHabits] = useState<HabitSummary[] | null>(null);
-  const [skills, setSkills] = useState<SkillProgress[]>([]);
+  const [stats, setStats] = useState<StatProgress[]>([]);
+  const [lucky, setLucky] = useState<{ win: LuckWin; habitName: string } | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   const [logging, setLogging] = useState<HabitSummary | null>(null);
@@ -47,9 +55,9 @@ export function Dashboard({ today, onOpen }: Props) {
 
   const load = useCallback(async () => {
     try {
-      const [h, s] = await Promise.all([api.listHabits(), api.getSkillProgress()]);
+      const [h, s] = await Promise.all([api.listHabits(), api.getStats()]);
       setHabits(h);
-      setSkills(s);
+      setStats(s);
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -64,7 +72,7 @@ export function Dashboard({ today, onOpen }: Props) {
     try {
       const updated = await action();
       setHabits((hs) => hs?.map((h) => (h.id === updated.id ? updated : h)) ?? null);
-      setSkills(await api.getSkillProgress());
+      setStats(await api.getStats());
     } finally {
       setBusyId(null);
     }
@@ -80,8 +88,14 @@ export function Dashboard({ today, onOpen }: Props) {
   }
 
   async function logToday(habit: HabitSummary, log: CompletionInput) {
-    await apply(habit.id, () => api.completeToday(habit.id, log));
+    let luck: LuckWin | null = null;
+    await apply(habit.id, async () => {
+      const result = await api.completeToday(habit.id, log);
+      luck = result.luck;
+      return result.summary;
+    });
     setLogging(null);
+    if (luck) setLucky({ win: luck, habitName: habit.name });
   }
 
   const total = habits?.length ?? 0;
@@ -146,16 +160,20 @@ export function Dashboard({ today, onOpen }: Props) {
               </div>
             </section>
           )}
-          <SkillPanel skills={skills} />
+          <StatPanel stats={stats} />
         </aside>
       </div>
 
       {logging && (
         <LogForm
-          habitName={logging.name}
+          habit={logging}
           onCancel={() => setLogging(null)}
           onSubmit={(log) => logToday(logging, log)}
         />
+      )}
+
+      {lucky && (
+        <LuckToast win={lucky.win} habitName={lucky.habitName} onClose={() => setLucky(null)} />
       )}
 
       {creating && (
