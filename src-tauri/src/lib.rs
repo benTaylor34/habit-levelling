@@ -1,4 +1,5 @@
 mod activity;
+mod backup;
 mod commands;
 mod db;
 mod decay;
@@ -33,6 +34,12 @@ pub fn run() {
                 }
             }
             let pool = tauri::async_runtime::block_on(db::init_pool(&db_path))?;
+            // One automatic backup per day, keeping the last two weeks.
+            let today = chrono::Local::now().date_naive();
+            let backups = data_dir.join("backups");
+            if let Err(e) = tauri::async_runtime::block_on(backup::auto_backup(&pool, &backups, today)) {
+                eprintln!("Automatic backup failed: {e}");
+            }
             app.manage(pool);
             Ok(())
         })
@@ -48,6 +55,10 @@ pub fn run() {
             commands::get_stats,
             commands::get_stat_history,
             commands::get_activity,
+            commands::export_backup,
+            commands::inspect_backup,
+            commands::restore_backup,
+            commands::get_backup_info,
             commands::preview_xp,
             commands::recommend_stats,
         ])

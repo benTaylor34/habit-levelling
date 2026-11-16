@@ -162,6 +162,31 @@ export interface Activity {
   bestDay: number;
 }
 
+/** What a backup file contains (checked by Rust before restoring). */
+export interface BackupSummary {
+  /** Local time it was made, "YYYY-MM-DD HH:MM:SS". */
+  exportedAt: string;
+  habits: number;
+  completions: number;
+  firstDate: IsoDate | null;
+  lastDate: IsoDate | null;
+}
+
+export interface RestoreResult {
+  summary: BackupSummary;
+  /** Path of the copy of the data as it was just before restoring. */
+  safetyBackup: string;
+}
+
+export interface BackupInfo {
+  dataFile: string;
+  backupsDir: string;
+  autoBackups: number;
+  /** Full path of the newest automatic backup. */
+  latestAuto: string | null;
+  autoBackupsKept: number;
+}
+
 export interface StatInfo {
   key: StatKey;
   name: string;

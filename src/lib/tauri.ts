@@ -9,6 +9,9 @@ import type {
   HabitSummary,
   IsoDate,
   Activity,
+  BackupInfo,
+  BackupSummary,
+  RestoreResult,
   LogResult,
   StatHistory,
   StatRecommendation,
@@ -29,6 +32,11 @@ export const api = {
   undoToday: (id: number) => invoke<HabitSummary>("undo_habit_today", { id }),
   getStats: () => invoke<StatProgress[]>("get_stats"),
   getActivity: () => invoke<Activity>("get_activity"),
+  /** Saves a backup file and returns its path. */
+  exportBackup: () => invoke<string>("export_backup"),
+  inspectBackup: (json: string) => invoke<BackupSummary>("inspect_backup", { json }),
+  restoreBackup: (json: string) => invoke<RestoreResult>("restore_backup", { json }),
+  getBackupInfo: () => invoke<BackupInfo>("get_backup_info"),
   /** `days` = null means all time. */
   getStatHistory: (days: number | null) => invoke<StatHistory>("get_stat_history", { days }),
   previewXp: (id: number, log: CompletionInput) =>

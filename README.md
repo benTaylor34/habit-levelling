@@ -19,6 +19,7 @@ Habit Levelling is a local-first desktop app built with **Rust + Tauri**, **SQLi
 - **Activity heatmap.** A GitHub-style year of activity at a glance.
 - **Analysis.** Stat levels or total XP over time for the last 30 days, 90 days, year or all time, plus a table of what changed.
 - **Habit history.** A monthly calendar, recent activity and lifetime totals for every habit.
+- **Backups.** Export your data to a file, restore it on another PC, and get an automatic backup every day.
 
 ![The Analysis page: stat levels over time with a hover readout (sample data)](docs/screenshots/analysis.png)
 
@@ -75,7 +76,15 @@ Everything is saved in a single SQLite file on your own computer:
 
 - Windows: `%APPDATA%\com.habitlevelling.app\habits.db`
 
-Nothing is sent anywhere. To back up your progress, copy that file. Your data isn't synced between computers.
+Nothing is sent anywhere, and your data isn't synced between computers.
+
+Everything about backups is on the **Data** page:
+
+- **Export a backup** saves all your habits and daily logs as one readable `.json` file in your Downloads folder.
+- **Restore from a backup** replaces the app's data with a backup's contents, for example to move to a new PC. It shows what the file contains and asks first. Your current data is saved as a safety backup before anything is replaced, so a restore can always be undone.
+- **Automatic backups** are saved the first time you open the app each day, into a `backups` folder next to your data. The last 14 are kept.
+
+XP, levels, streaks and decay aren't stored in backups; they're rebuilt from your logs, so a restore brings them all back exactly.
 
 ## Building from source
 
@@ -135,9 +144,10 @@ Two design rules keep the data trustworthy:
 | `src-tauri/src/history.rs` | Day-by-day stat XP and levels for the Analysis page |
 | `src-tauri/src/activity.rs` | A year of daily activity for the heatmap |
 | `src-tauri/src/recommend.rs` | Keyword-based stat suggestions |
+| `src-tauri/src/backup.rs` | JSON export, checked all-or-nothing restore, daily automatic backups |
 | `src-tauri/src/db.rs` | SQLite connection and embedded migrations |
 | `src-tauri/migrations/` | Database schema |
-| `src/pages/` | Today (dashboard), habit details and Analysis pages |
+| `src/pages/` | Today (dashboard), habit details, Analysis and Data pages |
 | `src/components/` | Habit cards, forms, stat panel, charts and heatmap |
 | `src/lib/` | Typed command wrappers, shared types and date helpers |
 

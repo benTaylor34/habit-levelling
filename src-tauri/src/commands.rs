@@ -3,7 +3,9 @@
 
 use chrono::{Local, NaiveDate};
 use sqlx::SqlitePool;
-use tauri::State;
+use serde::Serialize;
+use std::path::PathBuf;
+use tauri::{AppHandle, Manager, State};
 
 use crate::error::AppResult;
 use crate::models::{
@@ -11,6 +13,8 @@ use crate::models::{
     StatProgress, XpPreview,
 };
 use crate::activity::Activity;
+use crate::backup::{self, BackupSummary};
+use crate::error::AppError;
 use crate::habits;
 use crate::recommend::{self, StatRecommendation};
 
@@ -112,4 +116,88 @@ pub async fn get_stat_history(
 #[tauri::command]
 pub async fn get_activity(pool: State<'_, SqlitePool>) -> AppResult<Activity> {
     habits::activity(&pool, today()).await
+}
+
+/// Where automatic and safety backups live: `<app data>/backups`.
+pub fn backups_dir(app: &AppHandle) -> AppResult<PathBuf> {
+    Ok(app_data_dir(app)?.join("backups"))
+}
+
+fn app_data_dir(app: &AppHandle) -> AppResult<PathBuf> {
+    app.path()
+        .app_data_dir()
+        .map_err(|e| AppError::Invalid(format!("Couldn't find the app data folder: {e}")))
+}
+
+/// Save a backup of everything to the Downloads folder (or Documents, or the
+/// app's own folder if neither exists). Returns the saved file's path.
+#[tauri::command]
+pub async fn export_backup(app: AppHandle, pool: State<'_, SqlitePool>) -> AppResult<String> {
+    let dir = app
+        .path()
+        .download_dir()
+        .or_else(|_| app.path().document_dir())
+        .or_else(|_| app_data_dir(&app).map_err(|_| tauri::Error::UnknownPath))
+        .map_err(|e| AppError::Invalid(format!("Couldn't find a folder to save to: {e}")))?;
+    let data = backup::export(&pool).await?;
+    let stem = format!("habit-levelling-backup-{}", today().format("%Y-%m-%d"));
+    Ok(backup::write(&data, &dir, &stem)?.display().to_string())
+}
+
+/// Check a backup file's contents and say what's in it, without restoring.
+#[tauri::command]
+pub fn inspect_backup(json: String) -> AppResult<BackupSummary> {
+    Ok(backup::parse(&json)?.summary())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreResult {
+    pub summary: BackupSummary,
+    /// Copy of the data as it was just before restoring, to undo with.
+    pub safety_backup: String,
+}
+
+/// Replace all data with a backup's contents, saving the current data first.
+#[tauri::command]
+pub async fn restore_backup(
+    app: AppHandle,
+    pool: State<'_, SqlitePool>,
+    json: String,
+) -> AppResult<RestoreResult> {
+    let incoming = backup::parse(&json)?;
+    let current = backup::export(&pool).await?;
+    let stem = format!("before-restore-{}", today().format("%Y-%m-%d"));
+    let safety = backup::write(&current, &backups_dir(&app)?, &stem)?;
+    backup::restore(&pool, &incoming).await?;
+    Ok(RestoreResult {
+        summary: incoming.summary(),
+        safety_backup: safety.display().to_string(),
+    })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupInfo {
+    /// The live database file.
+    pub data_file: String,
+    pub backups_dir: String,
+    /// Number of automatic daily backups currently kept.
+    pub auto_backups: usize,
+    /// Full path of the newest automatic backup, e.g. ".../backups/auto-2026-11-16.json".
+    pub latest_auto: Option<String>,
+    pub auto_backups_kept: usize,
+}
+
+#[tauri::command]
+pub fn get_backup_info(app: AppHandle) -> AppResult<BackupInfo> {
+    let dir = backups_dir(&app)?;
+    let autos = backup::auto_backups(&dir);
+    Ok(BackupInfo {
+        data_file: app_data_dir(&app)?.join("habits.db").display().to_string(),
+        backups_dir: dir.display().to_string(),
+        auto_backups: autos.len(),
+        latest_auto: autos.first().map(|p| p.display().to_string()),
+        auto_backups_kept: backup::AUTO_BACKUPS_KEPT,
+    })
 }
