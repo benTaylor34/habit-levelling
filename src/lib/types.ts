@@ -111,6 +111,24 @@ export interface StatRecommendation {
   matched: string[];
 }
 
+/** One stat's day-by-day progress, lined up with `StatHistory.dates`. */
+export interface StatSeries {
+  stat: StatKey;
+  /** Cumulative XP at the end of each day. */
+  xp: number[];
+  /** Level as a decimal at the end of each day (3.5 = halfway to level 4). */
+  level: number[];
+  startLevel: number;
+  endLevel: number;
+  /** XP earned within the range. */
+  xpGained: number;
+}
+
+export interface StatHistory {
+  dates: IsoDate[];
+  series: StatSeries[];
+}
+
 export interface StatInfo {
   key: StatKey;
   name: string;

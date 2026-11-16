@@ -2,6 +2,7 @@ mod commands;
 mod db;
 mod error;
 mod habits;
+mod history;
 mod luck;
 mod models;
 mod recommend;
@@ -31,6 +32,7 @@ pub fn run() {
             commands::complete_habit_today,
             commands::undo_habit_today,
             commands::get_stats,
+            commands::get_stat_history,
             commands::preview_xp,
             commands::recommend_stats,
         ])

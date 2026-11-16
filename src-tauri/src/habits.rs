@@ -11,8 +11,9 @@ use sqlx::SqlitePool;
 use crate::error::{AppError, AppResult};
 use crate::models::{
     Completion, CompletionInput, Habit, HabitDetails, HabitInput, HabitSummary, LuckWin,
-    StatProgress, XpPreview,
+    StatHistory, StatProgress, XpPreview,
 };
+use crate::history::{self, StatGain};
 use crate::stats::{self, Stat};
 use crate::{luck, streaks};
 
@@ -274,26 +275,48 @@ pub async fn details(pool: &SqlitePool, id: i64, today: NaiveDate) -> AppResult<
     })
 }
 
-/// Level, XP and streaks for all six stats, plus Luck once it has any XP.
-/// A habit's primary stat gets each completion's full XP (time × difficulty ×
-/// that day's streak bonus) and its secondary stat gets half. A stat's streak counts days on which *any* habit training
+/// Level, XP and streaks for all six stats, plus Luck once it has any XP
+/// (see `stat_gains` for how XP is shared out). A stat's streak counts days on which *any* habit training
 /// it was done.
-pub async fn stat_progress(pool: &SqlitePool, today: NaiveDate) -> AppResult<Vec<StatProgress>> {
-    let mut xp: BTreeMap<Stat, u32> = BTreeMap::new();
-    let mut dates: BTreeMap<Stat, Vec<NaiveDate>> = BTreeMap::new();
+/// Every XP gain any stat has received: a habit's primary stat gets each
+/// completion's full XP (time × difficulty × that day's streak bonus) and its
+/// secondary stat gets half.
+pub async fn stat_gains(pool: &SqlitePool) -> AppResult<Vec<StatGain>> {
+    let mut out = Vec::new();
     for habit in list(pool).await? {
         let Some(primary) = habit.primary_stat else { continue };
         // Per-habit history so each completion carries that habit's streak bonus.
         for c in completions(pool, habit.id).await? {
-            let gains = [
-                Some((primary, c.xp)),
-                habit.secondary_stat.map(|s| (s, stats::secondary_xp(c.xp))),
-            ];
-            for (stat, gained) in gains.into_iter().flatten() {
-                *xp.entry(stat).or_default() += gained;
-                dates.entry(stat).or_default().push(c.date);
+            out.push(StatGain { date: c.date, stat: primary, xp: c.xp });
+            if let Some(secondary) = habit.secondary_stat {
+                out.push(StatGain {
+                    date: c.date,
+                    stat: secondary,
+                    xp: stats::secondary_xp(c.xp),
+                });
             }
         }
+    }
+    Ok(out)
+}
+
+/// Daily stat XP and levels from `days` ago (or all time) up to `today`.
+pub async fn stat_history(
+    pool: &SqlitePool,
+    today: NaiveDate,
+    days: Option<u32>,
+) -> AppResult<StatHistory> {
+    let gains = stat_gains(pool).await?;
+    let start = history::range_start(&gains, today, days);
+    Ok(history::build(&gains, start, today))
+}
+
+pub async fn stat_progress(pool: &SqlitePool, today: NaiveDate) -> AppResult<Vec<StatProgress>> {
+    let mut xp: BTreeMap<Stat, u32> = BTreeMap::new();
+    let mut dates: BTreeMap<Stat, Vec<NaiveDate>> = BTreeMap::new();
+    for g in stat_gains(pool).await? {
+        *xp.entry(g.stat).or_default() += g.xp;
+        dates.entry(g.stat).or_default().push(g.date);
     }
 
     let mut out: Vec<StatProgress> = Stat::TRAINABLE
@@ -572,6 +595,29 @@ mod tests {
         // A missed day starts the bonus over.
         let p = preview_xp(&pool, h.id, d("2026-11-09"), 30, 3).await.unwrap();
         assert_eq!((p.streak, p.primary), (1, 80));
+    }
+
+    #[tokio::test]
+    async fn stat_history_matches_stat_progress() {
+        let pool = db::test_pool().await;
+        let study = create(&pool, input("Study", Some(Intelligence), Some(Wisdom))).await.unwrap();
+        let today = d("2026-11-16");
+        complete(&pool, study.id, d("2026-11-14"), log(30, 2)).await.unwrap(); // 60
+        complete(&pool, study.id, d("2026-11-16"), log(30, 2)).await.unwrap(); // 60
+
+        let h = stat_history(&pool, today, Some(3)).await.unwrap();
+        assert_eq!(h.dates, vec![d("2026-11-14"), d("2026-11-15"), today]);
+        let int = h.series.iter().find(|s| s.stat == Intelligence).unwrap();
+        assert_eq!(int.xp, vec![60, 60, 120]);
+        let wis = h.series.iter().find(|s| s.stat == Wisdom).unwrap();
+        assert_eq!(wis.xp, vec![30, 30, 60]);
+
+        // The last day of the history agrees with the Stats panel.
+        let now = stat_progress(&pool, today).await.unwrap();
+        for s in &h.series {
+            let p = stat(&now, s.stat);
+            assert_eq!((*s.xp.last().unwrap(), s.end_level), (p.xp, p.level));
+        }
     }
 
     /// Log `days` consecutive days ending on `last`, rolling `roll` each time.

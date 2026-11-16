@@ -129,3 +129,28 @@ pub struct XpPreview {
     /// Streak multiplier as a percentage (100 = no bonus).
     pub streak_percent: u32,
 }
+
+/// One stat's day-by-day progress over a date range.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StatSeries {
+    pub stat: Stat,
+    /// Cumulative XP at the end of each day, lined up with `StatHistory::dates`.
+    pub xp: Vec<u32>,
+    /// Level as a decimal at the end of each day (3.5 = halfway to level 4).
+    pub level: Vec<f64>,
+    pub start_level: u32,
+    pub end_level: u32,
+    /// XP earned within the range.
+    pub xp_gained: u32,
+}
+
+/// Stat progress over time for the Analysis page.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StatHistory {
+    /// Every day in the range, oldest first.
+    pub dates: Vec<NaiveDate>,
+    /// One series per trainable stat (Luck is secret and not charted).
+    pub series: Vec<StatSeries>,
+}

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { api, errorMessage } from "./lib/tauri";
 import type { IsoDate } from "./lib/types";
+import { Analysis } from "./pages/Analysis";
 import { Dashboard } from "./pages/Dashboard";
 import { HabitDetails } from "./pages/HabitDetails";
 import "./App.css";
 
-type View = { page: "dashboard" } | { page: "details"; id: number };
+type View = { page: "dashboard" } | { page: "analysis" } | { page: "details"; id: number };
 
 function App() {
   const [view, setView] = useState<View>({ page: "dashboard" });
@@ -36,8 +37,26 @@ function App() {
           </span>
           Habit Levelling
         </button>
+        <div className="nav-tabs">
+          <button
+            className={view.page !== "analysis" ? "active" : ""}
+            aria-current={view.page !== "analysis" ? "page" : undefined}
+            onClick={() => setView({ page: "dashboard" })}
+          >
+            Today
+          </button>
+          <button
+            className={view.page === "analysis" ? "active" : ""}
+            aria-current={view.page === "analysis" ? "page" : undefined}
+            onClick={() => setView({ page: "analysis" })}
+          >
+            Analysis
+          </button>
+        </div>
       </nav>
-      {view.page === "dashboard" ? (
+      {view.page === "analysis" ? (
+        <Analysis key={today} />
+      ) : view.page === "dashboard" ? (
         <Dashboard
           key={today}
           today={today}

@@ -7,8 +7,8 @@ use tauri::State;
 
 use crate::error::AppResult;
 use crate::models::{
-    CompletionInput, Habit, HabitDetails, HabitInput, HabitSummary, LogResult, StatProgress,
-    XpPreview,
+    CompletionInput, Habit, HabitDetails, HabitInput, HabitSummary, LogResult, StatHistory,
+    StatProgress, XpPreview,
 };
 use crate::habits;
 use crate::recommend::{self, StatRecommendation};
@@ -96,4 +96,13 @@ pub async fn preview_xp(
 #[tauri::command]
 pub fn recommend_stats(name: String, description: Option<String>) -> StatRecommendation {
     recommend::recommend(&name, description.as_deref())
+}
+
+/// Stat XP and levels per day for the last `days` days, or all time if `None`.
+#[tauri::command]
+pub async fn get_stat_history(
+    pool: State<'_, SqlitePool>,
+    days: Option<u32>,
+) -> AppResult<StatHistory> {
+    habits::stat_history(&pool, today(), days).await
 }

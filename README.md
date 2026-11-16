@@ -37,12 +37,13 @@ React only renders and calls Tauri commands; all logic lives in Rust.
 | `src-tauri/src/habits.rs` | Habit CRUD, completions, summaries, stat XP queries |
 | `src-tauri/src/streaks.rs` | Pure current/longest streak calculation |
 | `src-tauri/src/stats.rs` | Stats, XP per completion, Pokémon-style level curve |
+| `src-tauri/src/history.rs` | Day-by-day stat XP and levels for the Analysis page |
 | `src-tauri/src/luck.rs` | Secret Luck stat: streak milestones and dice rolls |
 | `src-tauri/src/db.rs` | SQLite pool + embedded migrations |
 | `src-tauri/migrations/0001_initial.sql` | `habits`, `habit_completions` (`UNIQUE(habit_id, date)`) |
 | `src/lib/tauri.ts` | Typed wrappers for the commands |
-| `src/pages/` | Dashboard, HabitDetails |
-| `src/components/` | HabitCard, HabitForm, Calendar, StreakBadge, StatPanel, StatPicker, LogForm, LuckToast |
+| `src/pages/` | Dashboard, HabitDetails, Analysis |
+| `src/components/` | HabitCard, HabitForm, Calendar, StreakBadge, StatPanel, StatPicker, LogForm, LuckToast, RadarChart, LineChart |
 
 Streaks and XP are never stored; they're derived from completion history.
 Completions are stored as local calendar dates (`YYYY-MM-DD`). If today isn't
