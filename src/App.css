@@ -24,6 +24,8 @@
   --gold-soft: rgb(245 196 81 / 0.12);
   --danger: #f2667a;
   --danger-soft: rgb(242 102 122 / 0.12);
+  --warning: #f5a524;
+  --warning-soft: rgb(245 165 36 / 0.12);
 
   --radius: 14px;
   --radius-sm: 10px;
@@ -880,3 +882,35 @@ input[type="number"] { appearance: textfield; }
 .lc-leader { stroke: var(--stat); stroke-width: 1; }
 .lc-end { transition: opacity 0.15s; }
 .lc-end.is-dim { opacity: 0.3; }
+
+/* ───────────────────────── Decay warnings ───────────────────────── */
+/* Warnings always pair the colour with an icon and words. */
+.idle-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 8px;
+  padding: 1px 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  vertical-align: 2px;
+  color: var(--warning);
+  background: var(--warning-soft);
+  border-radius: 6px;
+}
+.idle-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  color: var(--warning);
+  background: var(--warning-soft);
+  border: 1px solid rgb(245 165 36 / 0.25);
+  border-radius: 8px;
+}
+.decay-warning { display: flex; align-items: center; gap: 5px; color: var(--warning); font-weight: 600; }
+.decay-soon { color: var(--warning); }
+.stat-row.decaying .xp-bar > div { background: repeating-linear-gradient(-45deg, var(--stat) 0 4px, color-mix(in srgb, var(--stat) 55%, #000) 4px 7px); }
+.data-table .down { color: var(--danger); }

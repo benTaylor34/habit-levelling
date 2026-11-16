@@ -1,7 +1,7 @@
 import type { HabitSummary } from "../lib/types";
 import { difficultyLabel, statInfo } from "../lib/types";
 import { formatMinutes } from "../lib/dates";
-import { BoltIcon, CheckIcon } from "./Icons";
+import { BoltIcon, CheckIcon, WarningIcon } from "./Icons";
 import { StreakBadge } from "./StreakBadge";
 
 interface Props {
@@ -35,7 +35,18 @@ export function HabitCard({ habit, busy, onToggle, onOpen }: Props) {
       </button>
 
       <button className="habit-body" onClick={() => onOpen(habit.id)}>
-        <span className="habit-name">{habit.name}</span>
+        <span className="habit-name">
+          {habit.name}
+          {habit.needsAttention && (
+            <span
+              className="idle-warning"
+              title={`Not done in ${habit.idleDays} days. Its stats fade unless another habit trains them.`}
+            >
+              <WarningIcon size={13} strokeWidth={2.4} />
+              {habit.idleDays}d
+            </span>
+          )}
+        </span>
         <span className="habit-meta">
           <StreakBadge days={habit.currentStreak} />
           {habit.primaryStat && (

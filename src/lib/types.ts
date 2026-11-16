@@ -57,6 +57,10 @@ export interface HabitSummary extends Habit {
   totalCompletions: number;
   totalMinutes: number;
   totalXp: number;
+  /** Days since last done (or since created, if never done). */
+  idleDays: number;
+  /** Not done for a week or more: its stats are decaying. */
+  needsAttention: boolean;
   /** Today's log, if completed today. */
   todayLog: Completion | null;
   /** Last 7 days, oldest first; the last entry is today. */
@@ -81,7 +85,16 @@ export interface StatProgress {
   /** Consecutive days any habit training this stat was done. */
   currentStreak: number;
   longestStreak: number;
+  /** Days since this stat last gained XP; null if it never has. */
+  daysIdle: number | null;
+  /** "xp" = losing XP within its level, "level" = losing levels too. */
+  decay: DecayPhase;
 }
+
+export type DecayPhase = "none" | "xp" | "level";
+
+/** Mirrors decay.rs: days without XP before XP, then levels, start fading. */
+export const DECAY_GRACE_DAYS = 7;
 
 export interface LuckWin {
   xp: number;
@@ -120,8 +133,10 @@ export interface StatSeries {
   level: number[];
   startLevel: number;
   endLevel: number;
-  /** XP earned within the range. */
+  /** XP earned within the range (before decay). */
   xpGained: number;
+  /** XP lost to decay within the range. */
+  xpDecayed: number;
 }
 
 export interface StatHistory {

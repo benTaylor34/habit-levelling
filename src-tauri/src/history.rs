@@ -1,11 +1,13 @@
 //! Stat progress over time, for the Analysis page. Pure: turns a list of XP
-//! gains into a day-by-day series per stat, so it's testable without a database.
+//! gains into a day-by-day series per stat (including decay), so it's
+//! testable without a database.
 
 use std::collections::BTreeMap;
 
 use chrono::{Days, NaiveDate};
 
 use crate::models::{StatHistory, StatSeries};
+use crate::decay;
 use crate::stats::{self, Stat};
 
 /// XP a stat gained on a day, from one completion.
@@ -28,8 +30,18 @@ fn fractional_level(stat: Stat, xp: u32) -> f64 {
     ((f64::from(p.level) + frac) * 100.0).round() / 100.0
 }
 
-/// Daily cumulative XP and level for each trainable stat from `start` to
-/// `end` inclusive. XP earned before `start` counts towards the starting values.
+/// Each stat's XP gains grouped by day, up to and including `end`.
+pub fn gains_by_stat(gains: &[StatGain], end: NaiveDate) -> BTreeMap<Stat, BTreeMap<NaiveDate, u32>> {
+    let mut out: BTreeMap<Stat, BTreeMap<NaiveDate, u32>> = BTreeMap::new();
+    for g in gains.iter().filter(|g| g.date <= end) {
+        *out.entry(g.stat).or_default().entry(g.date).or_default() += g.xp;
+    }
+    out
+}
+
+/// Daily XP and level for each trainable stat from `start` to `end`
+/// inclusive, replaying gains and decay from the very first gain so XP
+/// earned (or lost) before `start` sets the starting values.
 pub fn build(gains: &[StatGain], start: NaiveDate, end: NaiveDate) -> StatHistory {
     let mut dates = Vec::new();
     let mut day = start;
@@ -41,34 +53,29 @@ pub fn build(gains: &[StatGain], start: NaiveDate, end: NaiveDate) -> StatHistor
         };
     }
 
-    // XP per stat per day within the range, and the total before it.
-    let mut before: BTreeMap<Stat, u32> = BTreeMap::new();
-    let mut by_day: BTreeMap<(Stat, NaiveDate), u32> = BTreeMap::new();
-    for g in gains.iter().filter(|g| g.date <= end) {
-        if g.date < start {
-            *before.entry(g.stat).or_default() += g.xp;
-        } else {
-            *by_day.entry((g.stat, g.date)).or_default() += g.xp;
-        }
-    }
-
+    let by_stat = gains_by_stat(gains, end);
+    let empty = BTreeMap::new();
     let series = Stat::TRAINABLE
         .iter()
         .map(|&stat| {
-            let start_xp = before.get(&stat).copied().unwrap_or(0);
-            let mut total = start_xp;
-            let mut xp = Vec::with_capacity(dates.len());
-            let mut level = Vec::with_capacity(dates.len());
-            for d in &dates {
-                total += by_day.get(&(stat, *d)).copied().unwrap_or(0);
-                xp.push(total);
-                level.push(fractional_level(stat, total));
-            }
+            let stat_gains = by_stat.get(&stat).unwrap_or(&empty);
+            let replay: BTreeMap<NaiveDate, u32> =
+                decay::simulate(stat_gains, end).into_iter().collect();
+            // Replay is continuous from the first gain, so a missing day is before it.
+            let on = |d: NaiveDate| replay.get(&d).copied().unwrap_or(0);
+
+            let start_xp = start.pred_opt().map_or(0, on);
+            let xp: Vec<u32> = dates.iter().map(|&d| on(d)).collect();
+            let level = xp.iter().map(|&x| fractional_level(stat, x)).collect();
+            let end_xp = xp.last().copied().unwrap_or(start_xp);
+            let xp_gained: u32 = stat_gains.range(start..=end).map(|(_, x)| x).sum();
             StatSeries {
                 stat,
-                start_level: stats::progress(stat, start_xp).level,
-                end_level: stats::progress(stat, total).level,
-                xp_gained: total - start_xp,
+                start_level: stats::level_for_xp(start_xp).0,
+                end_level: stats::level_for_xp(end_xp).0,
+                xp_gained,
+                // Start + gained - decayed = end.
+                xp_decayed: (start_xp + xp_gained).saturating_sub(end_xp),
                 xp,
                 level,
             }
@@ -127,14 +134,27 @@ mod tests {
     #[test]
     fn xp_before_the_range_is_the_starting_point() {
         let gains = [
-            gain("2026-10-01", Strength, 100), // level 2 (70) with 30 into it
+            gain("2026-10-29", Strength, 100), // level 2 (70) with 30 into it
             gain("2026-11-02", Strength, 160), // 260 total = exactly level 3
         ];
         let h = build(&gains, d("2026-11-01"), d("2026-11-03"));
         let s = series(&h, Strength);
         assert_eq!(s.xp, vec![100, 260, 260]);
-        assert_eq!((s.start_level, s.end_level, s.xp_gained), (2, 3, 160));
+        assert_eq!((s.start_level, s.end_level, s.xp_gained, s.xp_decayed), (2, 3, 160, 0));
         assert_eq!(s.level, vec![2.16, 3.0, 3.0]); // 30/190 into level 2
+    }
+
+    #[test]
+    fn history_shows_decay_after_a_week_idle() {
+        let gains = [gain("2026-11-01", Wisdom, 260 + 200)]; // level 3, 200 into it
+        let h = build(&gains, d("2026-11-01"), d("2026-11-10"));
+        let s = series(&h, Wisdom);
+        let loss = decay::daily_loss(3); // 37 a day
+        assert_eq!(s.xp[6], 460, "Nov 7: day 6, still in grace");
+        assert_eq!(s.xp[7], 460 - loss, "Nov 8: first day of decay");
+        assert_eq!(s.xp[9], 460 - 3 * loss);
+        assert_eq!((s.xp_gained, s.xp_decayed), (460, 3 * loss));
+        assert_eq!(s.end_level, 3, "level kept");
     }
 
     #[test]

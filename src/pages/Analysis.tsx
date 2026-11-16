@@ -142,8 +142,10 @@ export function Analysis() {
               <span className="stat-icon success">
                 <ChartIcon size={18} />
               </span>
-              <span className="stat-value">{levelsGained}</span>
-              <span className="stat-label">Levels gained</span>
+              <span className="stat-value">{Math.abs(levelsGained)}</span>
+              <span className="stat-label">
+                {levelsGained < 0 ? "Levels lost" : "Levels gained"}
+              </span>
             </div>
             <div className="stat">
               <span className="stat-icon gold">
@@ -210,6 +212,7 @@ export function Analysis() {
                   <th className="num">Level</th>
                   <th className="num">Change</th>
                   <th className="num">XP earned</th>
+                  <th className="num">Lost to decay</th>
                   <th className="num">Total XP</th>
                 </tr>
               </thead>
@@ -224,10 +227,13 @@ export function Analysis() {
                       <td className="num">
                         {s.startLevel === s.endLevel ? s.endLevel : `${s.startLevel} → ${s.endLevel}`}
                       </td>
-                      <td className={`num ${change > 0 ? "up" : "muted"}`}>
-                        {change > 0 ? `+${change}` : "–"}
+                      <td className={`num ${change > 0 ? "up" : change < 0 ? "down" : "muted"}`}>
+                        {change > 0 ? `+${change}` : change < 0 ? `−${-change}` : "–"}
                       </td>
                       <td className="num">{s.xpGained.toLocaleString()}</td>
+                      <td className={`num ${s.xpDecayed > 0 ? "down" : "muted"}`}>
+                        {s.xpDecayed > 0 ? `−${s.xpDecayed.toLocaleString()}` : "–"}
+                      </td>
                       <td className="num muted">{s.xp[s.xp.length - 1].toLocaleString()}</td>
                     </tr>
                   );

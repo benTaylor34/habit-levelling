@@ -1,6 +1,7 @@
 import type { StatProgress } from "../lib/types";
-import { statInfo } from "../lib/types";
+import { DECAY_GRACE_DAYS, statInfo } from "../lib/types";
 import { RadarChart } from "./RadarChart";
+import { WarningIcon } from "./Icons";
 import { StreakBadge } from "./StreakBadge";
 
 function StatRow({ s }: { s: StatProgress }) {
@@ -8,7 +9,10 @@ function StatRow({ s }: { s: StatProgress }) {
   const maxed = s.xpForNextLevel === 0;
   const pct = maxed ? 100 : (s.xpIntoLevel / s.xpForNextLevel) * 100;
   return (
-    <li className={`stat-row stat-${s.stat}`} title={info.description}>
+    <li
+      className={`stat-row stat-${s.stat} ${s.decay !== "none" ? "decaying" : ""}`}
+      title={info.description}
+    >
       <span className="level-badge" aria-label={`Level ${s.level}`}>
         {s.level}
       </span>
@@ -32,9 +36,25 @@ function StatRow({ s }: { s: StatProgress }) {
         >
           <div style={{ width: `${pct}%` }} />
         </div>
-        <div className="muted tiny skill-xp">
-          {maxed ? "Max level" : `${s.xpIntoLevel} / ${s.xpForNextLevel} XP to level ${s.level + 1}`}
-        </div>
+        {s.decay !== "none" ? (
+          <div
+            className="tiny skill-xp decay-warning"
+            title="Train this stat to stop the decay. XP fades from 1 week idle; levels from 3 weeks."
+          >
+            <WarningIcon size={12} strokeWidth={2.4} />
+            {s.decay === "level" ? "Losing levels" : "Losing XP"} · {s.daysIdle} days untrained
+          </div>
+        ) : (
+          <div className="muted tiny skill-xp">
+            {maxed ? "Max level" : `${s.xpIntoLevel} / ${s.xpForNextLevel} XP to level ${s.level + 1}`}
+            {s.daysIdle !== null && s.xp > 0 && s.daysIdle >= DECAY_GRACE_DAYS - 3 && (
+              <span className="decay-soon">
+                {" · fades in "}
+                {DECAY_GRACE_DAYS - s.daysIdle}d
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </li>
   );

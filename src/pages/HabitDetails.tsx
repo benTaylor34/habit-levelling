@@ -17,6 +17,7 @@ import {
   TrashIcon,
   TrophyIcon,
   UndoIcon,
+  WarningIcon,
 } from "../components/Icons";
 
 interface Props {
@@ -112,6 +113,15 @@ export function HabitDetails({ id, today, onBack }: Props) {
           )}
           <h1>{summary.name}</h1>
           {summary.description && <p className="muted description">{summary.description}</p>}
+          {summary.needsAttention && (
+            <p className="idle-banner">
+              <WarningIcon size={14} strokeWidth={2.4} />
+              {summary.totalCompletions === 0
+                ? `Not started in ${summary.idleDays} days.`
+                : `Not done in ${summary.idleDays} days.`}{" "}
+              {summary.primaryStat && "Its stats fade after a week unless another habit trains them."}
+            </p>
+          )}
         </div>
         <div className="actions">
           <button

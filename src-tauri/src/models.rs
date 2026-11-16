@@ -4,6 +4,7 @@
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
+use crate::decay::DecayPhase;
 use crate::stats::Stat;
 
 /// A row of the `habits` table.
@@ -67,6 +68,10 @@ pub struct HabitSummary {
     pub total_completions: u32,
     pub total_minutes: u32,
     pub total_xp: u32,
+    /// Days since the habit was last done (or created, if never done).
+    pub idle_days: u32,
+    /// Not done for a week or more: its stats are decaying.
+    pub needs_attention: bool,
     /// Today's log, if the habit has been completed today.
     pub today_log: Option<Completion>,
     /// Completion flags for the last 7 days, oldest first (last = today).
@@ -98,6 +103,10 @@ pub struct StatProgress {
     /// Consecutive days on which any habit training this stat was done.
     pub current_streak: u32,
     pub longest_streak: u32,
+    /// Days since this stat last gained XP (`None` if it never has).
+    pub days_idle: Option<u32>,
+    /// Whether the stat is currently decaying (see `decay.rs`).
+    pub decay: DecayPhase,
 }
 
 /// Luck XP won when a streak milestone came up lucky.
@@ -141,8 +150,10 @@ pub struct StatSeries {
     pub level: Vec<f64>,
     pub start_level: u32,
     pub end_level: u32,
-    /// XP earned within the range.
+    /// XP earned within the range (before decay).
     pub xp_gained: u32,
+    /// XP lost to decay within the range.
+    pub xp_decayed: u32,
 }
 
 /// Stat progress over time for the Analysis page.

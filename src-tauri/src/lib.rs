@@ -1,5 +1,6 @@
 mod commands;
 mod db;
+mod decay;
 mod error;
 mod habits;
 mod history;

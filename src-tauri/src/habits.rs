@@ -3,8 +3,6 @@
 //! These functions take a plain `&SqlitePool` and an explicit `today`, so they
 //! can be tested against an in-memory database without Tauri or the clock.
 
-use std::collections::BTreeMap;
-
 use chrono::NaiveDate;
 use sqlx::SqlitePool;
 
@@ -13,6 +11,7 @@ use crate::models::{
     Completion, CompletionInput, Habit, HabitDetails, HabitInput, HabitSummary, LuckWin,
     StatHistory, StatProgress, XpPreview,
 };
+use crate::decay;
 use crate::history::{self, StatGain};
 use crate::stats::{self, Stat};
 use crate::{luck, streaks};
@@ -236,9 +235,24 @@ fn dates_of(completions: &[Completion]) -> Vec<NaiveDate> {
     completions.iter().map(|c| c.date).collect()
 }
 
+/// Days since the habit was last done, or since it was created if never done.
+fn idle_days(habit: &Habit, dates: &[NaiveDate], today: NaiveDate) -> u32 {
+    // created_at is SQLite's "YYYY-MM-DD HH:MM:SS"; the date part is enough.
+    let since = dates.last().copied().or_else(|| {
+        habit
+            .created_at
+            .get(..10)
+            .and_then(|s| NaiveDate::parse_from_str(s, DATE_FORMAT).ok())
+    });
+    since.map_or(0, |d| (today - d).num_days().max(0) as u32)
+}
+
 fn summarize(habit: Habit, completions: &[Completion], today: NaiveDate) -> HabitSummary {
     let dates = dates_of(completions);
+    let idle_days = idle_days(&habit, &dates, today);
     HabitSummary {
+        idle_days,
+        needs_attention: idle_days >= decay::GRACE_DAYS,
         current_streak: streaks::current_streak(&dates, today),
         longest_streak: streaks::longest_streak(&dates),
         completed_today: dates.contains(&today),
@@ -275,8 +289,9 @@ pub async fn details(pool: &SqlitePool, id: i64, today: NaiveDate) -> AppResult<
     })
 }
 
-/// Level, XP and streaks for all six stats, plus Luck once it has any XP
-/// (see `stat_gains` for how XP is shared out). A stat's streak counts days on which *any* habit training
+/// Level, XP, streaks and decay for all six stats, plus Luck once it has any
+/// XP (see `stat_gains` for how XP is shared out and `decay.rs` for how idle
+/// stats fade). A stat's streak counts days on which *any* habit training
 /// it was done.
 /// Every XP gain any stat has received: a habit's primary stat gets each
 /// completion's full XP (time × difficulty × that day's streak bonus) and its
@@ -312,20 +327,24 @@ pub async fn stat_history(
 }
 
 pub async fn stat_progress(pool: &SqlitePool, today: NaiveDate) -> AppResult<Vec<StatProgress>> {
-    let mut xp: BTreeMap<Stat, u32> = BTreeMap::new();
-    let mut dates: BTreeMap<Stat, Vec<NaiveDate>> = BTreeMap::new();
-    for g in stat_gains(pool).await? {
-        *xp.entry(g.stat).or_default() += g.xp;
-        dates.entry(g.stat).or_default().push(g.date);
-    }
+    let gains = stat_gains(pool).await?;
+    let by_stat = history::gains_by_stat(&gains, today);
 
     let mut out: Vec<StatProgress> = Stat::TRAINABLE
         .iter()
         .map(|&stat| {
-            let days = dates.get(&stat).map(Vec::as_slice).unwrap_or_default();
-            let mut p = stats::progress(stat, xp.get(&stat).copied().unwrap_or(0));
-            p.current_streak = streaks::current_streak(days, today);
-            p.longest_streak = streaks::longest_streak(days);
+            let Some(stat_gains) = by_stat.get(&stat) else {
+                return stats::progress(stat, 0);
+            };
+            // Replay gains and decay up to today.
+            let xp = decay::simulate(stat_gains, today).last().map_or(0, |(_, xp)| *xp);
+            let days: Vec<NaiveDate> = stat_gains.keys().copied().collect();
+            let days_idle = days.last().map(|last| (today - *last).num_days().max(0) as u32);
+            let mut p = stats::progress(stat, xp);
+            p.current_streak = streaks::current_streak(&days, today);
+            p.longest_streak = streaks::longest_streak(&days);
+            p.days_idle = days_idle;
+            p.decay = decay::phase(xp, days_idle);
             p
         })
         .collect();
@@ -344,6 +363,7 @@ pub async fn stat_progress(pool: &SqlitePool, today: NaiveDate) -> AppResult<Vec
 mod tests {
     use super::*;
     use crate::db;
+    use crate::decay::DecayPhase;
     use crate::stats::Stat::*;
 
     fn d(s: &str) -> NaiveDate {
@@ -618,6 +638,53 @@ mod tests {
             let p = stat(&now, s.stat);
             assert_eq!((*s.xp.last().unwrap(), s.end_level), (p.xp, p.level));
         }
+    }
+
+    #[tokio::test]
+    async fn stats_decay_after_a_week_without_xp() {
+        let pool = db::test_pool().await;
+        let h = create(&pool, input("Lift", Some(Strength), None)).await.unwrap();
+        complete(&pool, h.id, d("2026-11-01"), log(60, 3)).await.unwrap(); // 140 XP: level 2, 70 in
+
+        let p = |all: Vec<StatProgress>| stat(&all, Strength).clone();
+        let day6 = p(stat_progress(&pool, d("2026-11-07")).await.unwrap());
+        assert_eq!((day6.xp, day6.days_idle, day6.decay), (140, Some(6), DecayPhase::None));
+
+        let day7 = p(stat_progress(&pool, d("2026-11-08")).await.unwrap());
+        assert_eq!(day7.xp, 140 - decay::daily_loss(2));
+        assert_eq!((day7.level, day7.decay), (2, DecayPhase::Xp));
+
+        let day21 = p(stat_progress(&pool, d("2026-11-22")).await.unwrap());
+        assert_eq!((day21.level, day21.decay), (1, DecayPhase::Xp), "dropped to level 1");
+
+        // Training again stops the decay but doesn't refund it.
+        complete(&pool, h.id, d("2026-11-22"), PLAIN).await.unwrap();
+        let back = p(stat_progress(&pool, d("2026-11-22")).await.unwrap());
+        assert_eq!((back.days_idle, back.decay), (Some(0), DecayPhase::None));
+        assert!(back.xp < 140);
+    }
+
+    #[tokio::test]
+    async fn habits_need_attention_after_a_week() {
+        let pool = db::test_pool().await;
+        let h = create(&pool, input("Read", Some(Intelligence), None)).await.unwrap();
+        complete(&pool, h.id, d("2026-11-01"), PLAIN).await.unwrap();
+        let s = summary(&pool, h.id, d("2026-11-07")).await.unwrap();
+        assert_eq!((s.idle_days, s.needs_attention), (6, false));
+        let s = summary(&pool, h.id, d("2026-11-08")).await.unwrap();
+        assert_eq!((s.idle_days, s.needs_attention), (7, true));
+        complete(&pool, h.id, d("2026-11-08"), PLAIN).await.unwrap();
+        let s = summary(&pool, h.id, d("2026-11-08")).await.unwrap();
+        assert_eq!((s.idle_days, s.needs_attention), (0, false));
+    }
+
+    #[tokio::test]
+    async fn never_done_habits_count_from_creation() {
+        let pool = db::test_pool().await;
+        let h = create(&pool, input("Read", None, None)).await.unwrap();
+        let created = NaiveDate::parse_from_str(&h.created_at[..10], DATE_FORMAT).unwrap();
+        let s = summary(&pool, h.id, created + chrono::Days::new(9)).await.unwrap();
+        assert_eq!((s.idle_days, s.needs_attention), (9, true));
     }
 
     /// Log `days` consecutive days ending on `last`, rolling `roll` each time.

@@ -89,15 +89,21 @@ pub fn xp_for_next_level(level: u32) -> u32 {
 
 /// Turn a total XP figure into level progress. The XP bar shows
 /// `xp_into_level` out of `xp_for_next_level`, so it resets to 0 on each level up.
-/// At the max level `xp_for_next_level` is 0. Streaks start at 0; the caller
-/// fills them in from completion dates.
-pub fn progress(stat: Stat, xp: u32) -> StatProgress {
+/// At the max level `xp_for_next_level` is 0. Streaks and decay start empty;
+/// the caller fills them in from history.
+/// (level, XP earned since reaching that level) for a total XP figure.
+pub fn level_for_xp(xp: u32) -> (u32, u32) {
     let mut level = 1;
     let mut remaining = xp;
     while level < MAX_LEVEL && remaining >= xp_for_next_level(level) {
         remaining -= xp_for_next_level(level);
         level += 1;
     }
+    (level, remaining)
+}
+
+pub fn progress(stat: Stat, xp: u32) -> StatProgress {
+    let (level, remaining) = level_for_xp(xp);
     let (xp_into_level, xp_for_next) = if level == MAX_LEVEL {
         (0, 0)
     } else {
@@ -111,6 +117,8 @@ pub fn progress(stat: Stat, xp: u32) -> StatProgress {
         xp_for_next_level: xp_for_next,
         current_streak: 0,
         longest_streak: 0,
+        days_idle: None,
+        decay: crate::decay::DecayPhase::None,
     }
 }
 
