@@ -44,6 +44,9 @@ export interface Completion {
   date: IsoDate;
   minutes: number;
   difficulty: number;
+  /** The habit's streak on this day (1 = first day). */
+  streak: number;
+  /** XP earned by the primary stat, including the streak bonus. */
   xp: number;
 }
 
@@ -94,6 +97,10 @@ export interface LogResult {
 export interface XpPreview {
   primary: number;
   secondary: number;
+  /** The streak this log would be part of. */
+  streak: number;
+  /** Streak multiplier as a percentage (100 = no bonus). */
+  streakPercent: number;
 }
 
 export interface StatInfo {

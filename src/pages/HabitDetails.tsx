@@ -222,7 +222,7 @@ export function HabitDetails({ id, today, onBack }: Props) {
                           })}
                     </span>
                     <span className="muted tiny">
-                      {[formatMinutes(c.minutes), difficultyLabel(c.difficulty)]
+                      {[formatMinutes(c.minutes), difficultyLabel(c.difficulty), c.streak > 1 && `day ${c.streak}`]
                         .filter(Boolean)
                         .join(" · ")}
                     </span>

@@ -25,7 +25,8 @@ export const api = {
     invoke<LogResult>("complete_habit_today", { id, log }),
   undoToday: (id: number) => invoke<HabitSummary>("undo_habit_today", { id }),
   getStats: () => invoke<StatProgress[]>("get_stats"),
-  previewXp: (log: CompletionInput) => invoke<XpPreview>("preview_xp", { ...log }),
+  previewXp: (id: number, log: CompletionInput) =>
+    invoke<XpPreview>("preview_xp", { id, ...log }),
 };
 
 /** Rust errors arrive as plain strings. */

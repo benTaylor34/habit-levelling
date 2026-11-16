@@ -10,7 +10,6 @@ use crate::models::{
     CompletionInput, Habit, HabitDetails, HabitInput, HabitSummary, LogResult, StatProgress,
     XpPreview,
 };
-use crate::stats;
 use crate::habits;
 
 /// "Today" is the user's *local* calendar date, not a UTC timestamp.
@@ -79,14 +78,15 @@ pub async fn get_stats(pool: State<'_, SqlitePool>) -> AppResult<Vec<StatProgres
     habits::stat_progress(&pool, today()).await
 }
 
-/// XP a log would give the habit's primary and secondary stats, so the form
-/// can preview it without duplicating the formula.
+/// XP a log for today would give the habit's primary and secondary stats
+/// (including the streak bonus), so the form can preview it without
+/// duplicating the formula.
 #[tauri::command]
-pub fn preview_xp(minutes: u32, difficulty: u32) -> XpPreview {
-    let primary = stats::completion_xp(minutes, difficulty);
-    XpPreview {
-        primary,
-        secondary: stats::secondary_xp(primary),
-    }
+pub async fn preview_xp(
+    pool: State<'_, SqlitePool>,
+    id: i64,
+    minutes: u32,
+    difficulty: u32,
+) -> AppResult<XpPreview> {
+    habits::preview_xp(&pool, id, today(), minutes, difficulty).await
 }
-

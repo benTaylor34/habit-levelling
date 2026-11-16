@@ -693,3 +693,20 @@ input[type="number"] { appearance: textfield; }
 }
 .toast-title { font-weight: 700; color: var(--gold); }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 16px) scale(0.96); } }
+
+.streak-bonus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  margin-top: -4px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+.streak-bonus.active { color: var(--text-2); border-color: rgb(255 159 67 / 0.35); background: var(--fire-soft); }
+.streak-bonus.active svg { color: var(--fire); }
+.streak-bonus-mult { margin-left: auto; font-weight: 700; }
+.streak-bonus.active .streak-bonus-mult { color: var(--fire); }

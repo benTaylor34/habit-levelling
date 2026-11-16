@@ -3,7 +3,7 @@ import { api, errorMessage } from "../lib/tauri";
 import type { Completion, CompletionInput, Habit, XpPreview } from "../lib/types";
 import { DIFFICULTY_LABELS, statInfo } from "../lib/types";
 import { formatMinutes } from "../lib/dates";
-import { BoltIcon, CheckIcon } from "./Icons";
+import { BoltIcon, CheckIcon, FlameIcon } from "./Icons";
 
 interface Props {
   habit: Habit;
@@ -31,13 +31,13 @@ export function LogForm({ habit, initial, onSubmit, onCancel }: Props) {
     if (!minutesValid) return;
     let stale = false;
     api
-      .previewXp({ minutes: mins, difficulty })
+      .previewXp(habit.id, { minutes: mins, difficulty })
       .then((v) => !stale && setXp(v))
       .catch(() => {});
     return () => {
       stale = true;
     };
-  }, [mins, difficulty, minutesValid]);
+  }, [habit.id, mins, difficulty, minutesValid]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
@@ -122,6 +122,18 @@ export function LogForm({ habit, initial, onSubmit, onCancel }: Props) {
             })}
           </div>
         </div>
+
+        {xp && (
+          <div className={`streak-bonus ${xp.streakPercent > 100 ? "active" : ""}`}>
+            <FlameIcon size={16} />
+            <span>
+              {xp.streak > 1 ? `Day ${xp.streak} of your streak` : "Day 1 of a new streak"}
+            </span>
+            <span className="streak-bonus-mult">
+              ×{xp.streakPercent / 100} XP
+            </span>
+          </div>
+        )}
 
         {!minutesValid && <p className="error">Enter a whole number of minutes, up to 24 hours.</p>}
         {error && <p className="error">{error}</p>}

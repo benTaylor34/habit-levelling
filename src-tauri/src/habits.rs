@@ -11,7 +11,7 @@ use sqlx::SqlitePool;
 use crate::error::{AppError, AppResult};
 use crate::models::{
     Completion, CompletionInput, Habit, HabitDetails, HabitInput, HabitSummary, LuckWin,
-    StatProgress,
+    StatProgress, XpPreview,
 };
 use crate::stats::{self, Stat};
 use crate::{luck, streaks};
@@ -182,17 +182,7 @@ fn parse_date(s: &str) -> AppResult<NaiveDate> {
         .map_err(|e| AppError::Invalid(format!("Bad date '{s}' in database: {e}")))
 }
 
-fn to_completion(date: &str, minutes: i64, difficulty: i64) -> AppResult<Completion> {
-    let (minutes, difficulty) = (minutes.max(0) as u32, difficulty.max(0) as u32);
-    Ok(Completion {
-        date: parse_date(date)?,
-        minutes,
-        difficulty,
-        xp: stats::completion_xp(minutes, difficulty),
-    })
-}
-
-/// Every logged day for a habit, oldest first.
+/// Every logged day for a habit, oldest first, with each day's streak and XP.
 pub async fn completions(pool: &SqlitePool, id: i64) -> AppResult<Vec<Completion>> {
     let rows: Vec<(String, i64, i64)> = sqlx::query_as(
         "SELECT date, minutes, difficulty FROM habit_completions WHERE habit_id = ? ORDER BY date",
@@ -200,9 +190,45 @@ pub async fn completions(pool: &SqlitePool, id: i64) -> AppResult<Vec<Completion
     .bind(id)
     .fetch_all(pool)
     .await?;
-    rows.iter()
-        .map(|(date, minutes, difficulty)| to_completion(date, *minutes, *difficulty))
-        .collect()
+    let dates = rows
+        .iter()
+        .map(|(date, _, _)| parse_date(date))
+        .collect::<AppResult<Vec<_>>>()?;
+    let streaks = streaks::streak_lengths(&dates);
+    Ok(rows
+        .iter()
+        .zip(dates)
+        .zip(streaks)
+        .map(|(((_, minutes, difficulty), date), streak)| {
+            let (minutes, difficulty) = ((*minutes).max(0) as u32, (*difficulty).max(0) as u32);
+            Completion {
+                date,
+                minutes,
+                difficulty,
+                streak,
+                xp: stats::completion_xp(minutes, difficulty, streak),
+            }
+        })
+        .collect())
+}
+
+/// XP a log for `date` would earn, using the streak it would extend.
+pub async fn preview_xp(
+    pool: &SqlitePool,
+    id: i64,
+    date: NaiveDate,
+    minutes: u32,
+    difficulty: u32,
+) -> AppResult<XpPreview> {
+    let dates = dates_of(&completions(pool, id).await?);
+    let streak = streaks::streak_if_done_on(&dates, date);
+    let primary = stats::completion_xp(minutes, difficulty, streak);
+    Ok(XpPreview {
+        primary,
+        secondary: stats::secondary_xp(primary),
+        streak,
+        streak_percent: stats::streak_percent(streak),
+    })
 }
 
 fn dates_of(completions: &[Completion]) -> Vec<NaiveDate> {
@@ -249,30 +275,24 @@ pub async fn details(pool: &SqlitePool, id: i64, today: NaiveDate) -> AppResult<
 }
 
 /// Level, XP and streaks for all six stats, plus Luck once it has any XP.
-/// A habit's primary stat gets each completion's full XP and its secondary
-/// stat gets half. A stat's streak counts days on which *any* habit training
+/// A habit's primary stat gets each completion's full XP (time × difficulty ×
+/// that day's streak bonus) and its secondary stat gets half. A stat's streak counts days on which *any* habit training
 /// it was done.
 pub async fn stat_progress(pool: &SqlitePool, today: NaiveDate) -> AppResult<Vec<StatProgress>> {
-    let rows: Vec<(Option<Stat>, Option<Stat>, String, i64, i64)> = sqlx::query_as(
-        "SELECT h.primary_stat, h.secondary_stat, c.date, c.minutes, c.difficulty
-         FROM habits h
-         JOIN habit_completions c ON c.habit_id = h.id
-         WHERE h.archived = 0 AND h.primary_stat IS NOT NULL",
-    )
-    .fetch_all(pool)
-    .await?;
-
     let mut xp: BTreeMap<Stat, u32> = BTreeMap::new();
     let mut dates: BTreeMap<Stat, Vec<NaiveDate>> = BTreeMap::new();
-    for (primary, secondary, date, minutes, difficulty) in rows {
-        let c = to_completion(&date, minutes, difficulty)?;
-        let gains = [
-            primary.map(|s| (s, c.xp)),
-            secondary.map(|s| (s, stats::secondary_xp(c.xp))),
-        ];
-        for (stat, gained) in gains.into_iter().flatten() {
-            *xp.entry(stat).or_default() += gained;
-            dates.entry(stat).or_default().push(c.date);
+    for habit in list(pool).await? {
+        let Some(primary) = habit.primary_stat else { continue };
+        // Per-habit history so each completion carries that habit's streak bonus.
+        for c in completions(pool, habit.id).await? {
+            let gains = [
+                Some((primary, c.xp)),
+                habit.secondary_stat.map(|s| (s, stats::secondary_xp(c.xp))),
+            ];
+            for (stat, gained) in gains.into_iter().flatten() {
+                *xp.entry(stat).or_default() += gained;
+                dates.entry(stat).or_default().push(c.date);
+            }
         }
     }
 
@@ -438,7 +458,7 @@ mod tests {
         let s = summary(&pool, h.id, today).await.unwrap();
         assert_eq!(s.total_completions, 1);
         assert_eq!(s.total_minutes, 45);
-        assert_eq!(s.total_xp, stats::completion_xp(45, 3));
+        assert_eq!(s.total_xp, stats::completion_xp(45, 3, 1));
         let today_log = s.today_log.unwrap();
         assert_eq!((today_log.minutes, today_log.difficulty), (45, 3));
     }
@@ -478,7 +498,7 @@ mod tests {
         create(&pool, input("Untagged", None, None)).await.unwrap();
 
         complete(&pool, study.id, d("2026-11-13"), log(30, 2)).await.unwrap(); // 60
-        complete(&pool, study.id, d("2026-11-14"), log(60, 3)).await.unwrap(); // 140
+        complete(&pool, study.id, d("2026-11-14"), log(60, 3)).await.unwrap(); // 140 × 1.05 (day 2) = 147
         complete(&pool, lift.id, d("2026-11-14"), log(45, 4)).await.unwrap(); // 137
 
         let all = stat_progress(&pool, d("2026-11-14")).await.unwrap();
@@ -489,15 +509,15 @@ mod tests {
                 (Strength, 137),
                 (Dexterity, 0),
                 (Constitution, 68),
-                (Intelligence, 200),
-                (Wisdom, 100),
+                (Intelligence, 207),
+                (Wisdom, 103),
                 (Charisma, 0),
             ],
             "all six stats are always listed; Luck stays hidden"
         );
-        // 200 XP: level 2 needs 70, level 3 needs 70 + 190 = 260.
+        // 207 XP: level 2 needs 70, level 3 needs 70 + 190 = 260.
         let int = stat(&all, Intelligence);
-        assert_eq!((int.level, int.xp_into_level, int.xp_for_next_level), (2, 130, 190));
+        assert_eq!((int.level, int.xp_into_level, int.xp_for_next_level), (2, 137, 190));
         assert_eq!(stat(&all, Dexterity).level, 1);
     }
 
@@ -521,6 +541,37 @@ mod tests {
         assert_eq!(stat(&all, Constitution).longest_streak, 4);
         assert_eq!(stat(&all, Dexterity).current_streak, 1);
         assert_eq!(summary(&pool, run.id, today).await.unwrap().current_streak, 1);
+    }
+
+    #[tokio::test]
+    async fn streak_bonus_grows_xp_day_by_day() {
+        let pool = db::test_pool().await;
+        let h = create(&pool, input("Read", Some(Intelligence), None)).await.unwrap();
+        for day in ["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-05"] {
+            complete(&pool, h.id, d(day), log(30, 1)).await.unwrap();
+        }
+        let det = details(&pool, h.id, d("2026-11-05")).await.unwrap();
+        let got: Vec<_> = det.completions.iter().map(|c| (c.streak, c.xp)).collect();
+        // 40 base XP × 1.0, 1.05, 1.10, then the gap resets to ×1.0.
+        assert_eq!(got, vec![(1, 40), (2, 42), (3, 44), (1, 40)]);
+        assert_eq!(det.summary.total_xp, 166);
+    }
+
+    #[tokio::test]
+    async fn preview_uses_the_streak_the_log_would_extend() {
+        let pool = db::test_pool().await;
+        let h = create(&pool, input("Read", Some(Intelligence), None)).await.unwrap();
+        log_streak(&pool, h.id, d("2026-11-06"), 6, 99).await;
+
+        let p = preview_xp(&pool, h.id, d("2026-11-07"), 30, 3).await.unwrap();
+        assert_eq!((p.streak, p.streak_percent, p.primary, p.secondary), (7, 130, 104, 52));
+        // Matches what logging it actually earns.
+        complete_with_roll(&pool, h.id, d("2026-11-07"), log(30, 3), 99).await.unwrap();
+        let s = summary(&pool, h.id, d("2026-11-07")).await.unwrap();
+        assert_eq!(s.today_log.unwrap().xp, 104);
+        // A missed day starts the bonus over.
+        let p = preview_xp(&pool, h.id, d("2026-11-09"), 30, 3).await.unwrap();
+        assert_eq!((p.streak, p.primary), (1, 80));
     }
 
     /// Log `days` consecutive days ending on `last`, rolling `roll` each time.

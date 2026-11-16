@@ -49,6 +49,9 @@ pub struct Completion {
     pub date: NaiveDate,
     pub minutes: u32,
     pub difficulty: u32,
+    /// The habit's streak on this day (1 = first day of a streak).
+    pub streak: u32,
+    /// XP the primary stat earned, including the streak bonus.
     pub xp: u32,
 }
 
@@ -121,4 +124,8 @@ pub struct LogResult {
 pub struct XpPreview {
     pub primary: u32,
     pub secondary: u32,
+    /// The streak this log would be part of.
+    pub streak: u32,
+    /// Streak multiplier as a percentage (100 = no bonus).
+    pub streak_percent: u32,
 }

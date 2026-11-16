@@ -1,5 +1,6 @@
 //! D&D-style stats and levelling. XP is derived from each completion's time
-//! spent and difficulty; levels are derived from total XP. Nothing here is stored.
+//! spent, difficulty and the habit's streak that day; levels are derived from
+//! total XP. Nothing here is stored.
 
 use serde::{Deserialize, Serialize};
 
@@ -47,11 +48,25 @@ pub fn difficulty_percent(difficulty: u32) -> u32 {
     50 + 50 * difficulty.clamp(MIN_DIFFICULTY, MAX_DIFFICULTY)
 }
 
-/// XP for one completion: (10 + 1 per minute) × difficulty multiplier.
-/// The habit's primary stat gets all of it.
-/// e.g. 30 minutes at difficulty 3 (Hard) = (10 + 30) × 2 = 80 XP.
-pub fn completion_xp(minutes: u32, difficulty: u32) -> u32 {
-    (BASE_XP + minutes.min(MAX_MINUTES)) * difficulty_percent(difficulty) / 100
+/// Streak bonus as a percentage: +5% for every day the streak has run
+/// beyond the first, capped at +100% (×2) from a 21-day streak onwards.
+/// Day 1 = ×1, day 7 = ×1.3, day 14 = ×1.65, day 21+ = ×2.
+pub const STREAK_BONUS_PER_DAY: u32 = 5;
+pub const MAX_STREAK_BONUS: u32 = 100;
+
+pub fn streak_percent(streak: u32) -> u32 {
+    100 + (streak.saturating_sub(1) * STREAK_BONUS_PER_DAY).min(MAX_STREAK_BONUS)
+}
+
+/// XP for one completion, which the habit's primary stat gets in full:
+///
+/// (10 + 1 per minute) × difficulty multiplier × streak multiplier
+///
+/// `streak` is the habit's streak on the day of the completion (1 = first day).
+/// e.g. 30 minutes, Hard (×2), day 7 of a streak (×1.3) = 40 × 2 × 1.3 = 104 XP.
+pub fn completion_xp(minutes: u32, difficulty: u32, streak: u32) -> u32 {
+    let base = BASE_XP + minutes.min(MAX_MINUTES);
+    base * difficulty_percent(difficulty) * streak_percent(streak) / 10_000
 }
 
 /// The secondary stat gets half of what the primary stat gets.
@@ -140,17 +155,31 @@ mod tests {
 
     #[test]
     fn more_time_and_difficulty_give_more_xp() {
-        assert_eq!(completion_xp(0, 1), 10);
-        assert_eq!(completion_xp(30, 1), 40);
-        let by_difficulty: Vec<u32> = (1..=5).map(|d| completion_xp(30, d)).collect();
+        assert_eq!(completion_xp(0, 1, 1), 10);
+        assert_eq!(completion_xp(30, 1, 1), 40);
+        let by_difficulty: Vec<u32> = (1..=5).map(|d| completion_xp(30, d, 1)).collect();
         assert_eq!(by_difficulty, vec![40, 60, 80, 100, 120]);
         assert_eq!(secondary_xp(80), 40);
     }
 
     #[test]
+    fn longer_streaks_give_more_xp_up_to_double() {
+        assert_eq!(streak_percent(0), 100);
+        assert_eq!(streak_percent(1), 100);
+        assert_eq!(streak_percent(7), 130);
+        assert_eq!(streak_percent(21), 200);
+        assert_eq!(streak_percent(365), 200);
+        assert_eq!(completion_xp(30, 3, 1), 80);
+        assert_eq!(completion_xp(30, 3, 7), 104);
+        assert_eq!(completion_xp(30, 3, 30), 160);
+    }
+
+    #[test]
     fn out_of_range_inputs_are_clamped() {
-        assert_eq!(completion_xp(0, 0), completion_xp(0, 1));
-        assert_eq!(completion_xp(0, 9), completion_xp(0, 5));
-        assert_eq!(completion_xp(10_000, 1), completion_xp(MAX_MINUTES, 1));
+        assert_eq!(completion_xp(0, 0, 1), completion_xp(0, 1, 1));
+        assert_eq!(completion_xp(0, 9, 1), completion_xp(0, 5, 1));
+        assert_eq!(completion_xp(10_000, 1, 1), completion_xp(MAX_MINUTES, 1, 1));
+        // Largest possible XP doesn't overflow.
+        assert_eq!(completion_xp(MAX_MINUTES, 5, 1000), (10 + MAX_MINUTES) * 6);
     }
 }
