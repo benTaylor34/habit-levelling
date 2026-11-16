@@ -29,6 +29,7 @@ pub fn run() {
             commands::complete_habit_today,
             commands::undo_habit_today,
             commands::get_skill_progress,
+            commands::preview_xp,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

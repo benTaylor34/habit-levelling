@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage } from "../lib/tauri";
-import type { HabitSummary, IsoDate, SkillProgress } from "../lib/types";
+import type { CompletionInput, HabitSummary, IsoDate, SkillProgress } from "../lib/types";
 import { formatLong } from "../lib/dates";
 import { HabitCard } from "../components/HabitCard";
 import { HabitForm } from "../components/HabitForm";
+import { LogForm } from "../components/LogForm";
 import { SkillPanel } from "../components/SkillPanel";
 import { PlusIcon } from "../components/Icons";
 
@@ -41,6 +42,7 @@ export function Dashboard({ today, onOpen }: Props) {
   const [skills, setSkills] = useState<SkillProgress[]>([]);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
+  const [logging, setLogging] = useState<HabitSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -57,24 +59,35 @@ export function Dashboard({ today, onOpen }: Props) {
     load();
   }, [load]);
 
-  async function toggle(habit: HabitSummary) {
-    setBusyId(habit.id);
+  async function apply(id: number, action: () => Promise<HabitSummary>) {
+    setBusyId(id);
     try {
-      const updated = habit.completedToday
-        ? await api.undoToday(habit.id)
-        : await api.completeToday(habit.id);
+      const updated = await action();
       setHabits((hs) => hs?.map((h) => (h.id === updated.id ? updated : h)) ?? null);
       setSkills(await api.getSkillProgress());
-    } catch (e) {
-      setError(errorMessage(e));
     } finally {
       setBusyId(null);
     }
   }
 
+  // Unchecking undoes today straight away; checking asks for time + difficulty.
+  function toggle(habit: HabitSummary) {
+    if (habit.completedToday) {
+      apply(habit.id, () => api.undoToday(habit.id)).catch((e) => setError(errorMessage(e)));
+    } else {
+      setLogging(habit);
+    }
+  }
+
+  async function logToday(habit: HabitSummary, log: CompletionInput) {
+    await apply(habit.id, () => api.completeToday(habit.id, log));
+    setLogging(null);
+  }
+
   const total = habits?.length ?? 0;
   const doneCount = habits?.filter((h) => h.completedToday).length ?? 0;
   const bestStreak = habits?.reduce((m, h) => Math.max(m, h.currentStreak), 0) ?? 0;
+  const xpToday = habits?.reduce((sum, h) => sum + (h.todayLog?.xp ?? 0), 0) ?? 0;
 
   return (
     <>
@@ -127,13 +140,23 @@ export function Dashboard({ today, onOpen }: Props) {
                 <div className="overview-title">
                   {doneCount === total ? "All done today" : `${total - doneCount} left today`}
                 </div>
-                <div className="muted small">Best active streak: {bestStreak}d</div>
+                <div className="muted small">
+                  +{xpToday} XP today · best streak {bestStreak}d
+                </div>
               </div>
             </section>
           )}
           <SkillPanel skills={skills} />
         </aside>
       </div>
+
+      {logging && (
+        <LogForm
+          habitName={logging.name}
+          onCancel={() => setLogging(null)}
+          onSubmit={(log) => logToday(logging, log)}
+        />
+      )}
 
       {creating && (
         <HabitForm

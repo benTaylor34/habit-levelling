@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage } from "../lib/tauri";
-import type { HabitDetails as Details, IsoDate } from "../lib/types";
-import { parseIsoDate } from "../lib/dates";
+import type { CompletionInput, HabitDetails as Details, IsoDate } from "../lib/types";
+import { difficultyLabel } from "../lib/types";
+import { formatMinutes, parseIsoDate } from "../lib/dates";
 import { Calendar } from "../components/Calendar";
 import { HabitForm } from "../components/HabitForm";
+import { LogForm } from "../components/LogForm";
 import {
   ArrowLeftIcon,
-  ChartIcon,
+  BoltIcon,
   CheckIcon,
+  ClockIcon,
   FlameIcon,
   PencilIcon,
   TrashIcon,
   TrophyIcon,
+  UndoIcon,
 } from "../components/Icons";
 
 interface Props {
@@ -23,6 +27,7 @@ interface Props {
 export function HabitDetails({ id, today, onBack }: Props) {
   const [details, setDetails] = useState<Details | null>(null);
   const [editing, setEditing] = useState(false);
+  const [logging, setLogging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,11 +60,16 @@ export function HabitDetails({ id, today, onBack }: Props) {
 
   const { summary, completions } = details;
 
-  async function toggle() {
+  async function logToday(log: CompletionInput) {
+    await api.completeToday(id, log);
+    setLogging(false);
+    await load();
+  }
+
+  async function undo() {
     setBusy(true);
     try {
-      if (summary.completedToday) await api.undoToday(id);
-      else await api.completeToday(id);
+      await api.undoToday(id);
       await load();
     } catch (e) {
       setError(errorMessage(e));
@@ -110,14 +120,32 @@ export function HabitDetails({ id, today, onBack }: Props) {
           >
             <TrashIcon size={16} />
           </button>
-          <button
-            className={`btn ${summary.completedToday ? "success" : "primary"}`}
-            disabled={busy}
-            onClick={toggle}
-          >
-            <CheckIcon size={16} strokeWidth={2.5} />
-            {summary.completedToday ? "Completed" : "Complete today"}
-          </button>
+          {summary.todayLog ? (
+            <>
+              <button
+                className="btn icon"
+                disabled={busy}
+                onClick={undo}
+                title="Undo today"
+                aria-label="Undo today"
+              >
+                <UndoIcon size={16} />
+              </button>
+              <button
+                className="btn success"
+                onClick={() => setLogging(true)}
+                title="Edit today's log"
+              >
+                <CheckIcon size={16} strokeWidth={2.5} />
+                Done · +{summary.todayLog.xp} XP
+              </button>
+            </>
+          ) : (
+            <button className="btn primary" onClick={() => setLogging(true)}>
+              <CheckIcon size={16} strokeWidth={2.5} />
+              Complete today
+            </button>
+          )}
         </div>
       </header>
 
@@ -140,16 +168,25 @@ export function HabitDetails({ id, today, onBack }: Props) {
         </div>
         <div className="stat">
           <span className="stat-icon accent">
-            <ChartIcon size={18} />
+            <BoltIcon size={18} />
           </span>
-          <span className="stat-value">{summary.totalCompletions}</span>
-          <span className="stat-label">Total completions</span>
+          <span className="stat-value">{summary.totalXp}</span>
+          <span className="stat-label">XP earned</span>
+        </div>
+        <div className="stat">
+          <span className="stat-icon success">
+            <ClockIcon size={18} />
+          </span>
+          <span className="stat-value">{formatMinutes(summary.totalMinutes) || "0 min"}</span>
+          <span className="stat-label">
+            Time over {summary.totalCompletions} {summary.totalCompletions === 1 ? "day" : "days"}
+          </span>
         </div>
       </div>
 
       <div className="details-grid">
         <section className="panel">
-          <Calendar completions={completions} today={today} />
+          <Calendar completions={completions.map((c) => c.date)} today={today} />
         </section>
         <section className="panel">
           <div className="panel-header">
@@ -159,25 +196,43 @@ export function HabitDetails({ id, today, onBack }: Props) {
             <p className="muted small">No completions yet.</p>
           ) : (
             <ul className="history">
-              {recent.map((d) => (
-                <li key={d}>
+              {recent.map((c) => (
+                <li key={c.date}>
                   <span className="history-dot">
                     <CheckIcon size={12} strokeWidth={3} />
                   </span>
-                  <span>
-                    {parseIsoDate(d).toLocaleDateString(undefined, {
-                      weekday: "short",
-                      day: "numeric",
-                      month: "short",
-                    })}
+                  <span className="history-main">
+                    <span>
+                      {c.date === today
+                        ? "Today"
+                        : parseIsoDate(c.date).toLocaleDateString(undefined, {
+                            weekday: "short",
+                            day: "numeric",
+                            month: "short",
+                          })}
+                    </span>
+                    <span className="muted tiny">
+                      {[formatMinutes(c.minutes), difficultyLabel(c.difficulty)]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
                   </span>
-                  <span className="muted tiny">{d === today ? "Today" : ""}</span>
+                  <span className="xp-gain">+{c.xp} XP</span>
                 </li>
               ))}
             </ul>
           )}
         </section>
       </div>
+
+      {logging && (
+        <LogForm
+          habitName={summary.name}
+          initial={summary.todayLog}
+          onCancel={() => setLogging(false)}
+          onSubmit={logToday}
+        />
+      )}
 
       {editing && (
         <HabitForm

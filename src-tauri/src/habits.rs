@@ -3,11 +3,15 @@
 //! These functions take a plain `&SqlitePool` and an explicit `today`, so they
 //! can be tested against an in-memory database without Tauri or the clock.
 
+use std::collections::BTreeMap;
+
 use chrono::NaiveDate;
 use sqlx::SqlitePool;
 
 use crate::error::{AppError, AppResult};
-use crate::models::{Habit, HabitDetails, HabitInput, HabitSummary, SkillProgress};
+use crate::models::{
+    Completion, CompletionInput, Habit, HabitDetails, HabitInput, HabitSummary, SkillProgress,
+};
 use crate::{skills, streaks};
 
 const DATE_FORMAT: &str = "%Y-%m-%d";
@@ -81,14 +85,32 @@ pub async fn delete(pool: &SqlitePool, id: i64) -> AppResult<()> {
     Ok(())
 }
 
-/// Mark the habit complete on `date`. Idempotent thanks to UNIQUE(habit_id, date).
-pub async fn complete(pool: &SqlitePool, id: i64, date: NaiveDate) -> AppResult<()> {
+/// Log the habit as done on `date` with the time spent and difficulty.
+/// Logging again on the same day replaces that day's entry (UNIQUE(habit_id, date)).
+pub async fn complete(
+    pool: &SqlitePool,
+    id: i64,
+    date: NaiveDate,
+    log: CompletionInput,
+) -> AppResult<()> {
+    if log.minutes > skills::MAX_MINUTES {
+        return Err(AppError::Invalid("Time spent can't be more than 24 hours".into()));
+    }
+    if !(skills::MIN_DIFFICULTY..=skills::MAX_DIFFICULTY).contains(&log.difficulty) {
+        return Err(AppError::Invalid("Difficulty must be between 1 and 5".into()));
+    }
     get(pool, id).await?; // clear NotFound error instead of an FK failure
-    sqlx::query("INSERT OR IGNORE INTO habit_completions (habit_id, date) VALUES (?, ?)")
-        .bind(id)
-        .bind(date.format(DATE_FORMAT).to_string())
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "INSERT INTO habit_completions (habit_id, date, minutes, difficulty) VALUES (?, ?, ?, ?)
+         ON CONFLICT (habit_id, date) DO UPDATE SET
+             minutes = excluded.minutes, difficulty = excluded.difficulty",
+    )
+    .bind(id)
+    .bind(date.format(DATE_FORMAT).to_string())
+    .bind(log.minutes)
+    .bind(log.difficulty)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -102,73 +124,110 @@ pub async fn uncomplete(pool: &SqlitePool, id: i64, date: NaiveDate) -> AppResul
     Ok(())
 }
 
-/// All completion dates for a habit, ascending.
-pub async fn completion_dates(pool: &SqlitePool, id: i64) -> AppResult<Vec<NaiveDate>> {
-    let rows: Vec<(String,)> =
-        sqlx::query_as("SELECT date FROM habit_completions WHERE habit_id = ? ORDER BY date")
-            .bind(id)
-            .fetch_all(pool)
-            .await?;
-    rows.into_iter()
-        .map(|(s,)| {
-            NaiveDate::parse_from_str(&s, DATE_FORMAT)
-                .map_err(|e| AppError::Invalid(format!("Bad date '{s}' in database: {e}")))
-        })
+fn parse_date(s: &str) -> AppResult<NaiveDate> {
+    NaiveDate::parse_from_str(s, DATE_FORMAT)
+        .map_err(|e| AppError::Invalid(format!("Bad date '{s}' in database: {e}")))
+}
+
+fn to_completion(date: &str, minutes: i64, difficulty: i64) -> AppResult<Completion> {
+    let (minutes, difficulty) = (minutes.max(0) as u32, difficulty.max(0) as u32);
+    Ok(Completion {
+        date: parse_date(date)?,
+        minutes,
+        difficulty,
+        xp: skills::completion_xp(minutes, difficulty),
+    })
+}
+
+/// Every logged day for a habit, oldest first.
+pub async fn completions(pool: &SqlitePool, id: i64) -> AppResult<Vec<Completion>> {
+    let rows: Vec<(String, i64, i64)> = sqlx::query_as(
+        "SELECT date, minutes, difficulty FROM habit_completions WHERE habit_id = ? ORDER BY date",
+    )
+    .bind(id)
+    .fetch_all(pool)
+    .await?;
+    rows.iter()
+        .map(|(date, minutes, difficulty)| to_completion(date, *minutes, *difficulty))
         .collect()
 }
 
-fn summarize(habit: Habit, dates: &[NaiveDate], today: NaiveDate) -> HabitSummary {
+fn dates_of(completions: &[Completion]) -> Vec<NaiveDate> {
+    completions.iter().map(|c| c.date).collect()
+}
+
+fn summarize(habit: Habit, completions: &[Completion], today: NaiveDate) -> HabitSummary {
+    let dates = dates_of(completions);
     HabitSummary {
-        current_streak: streaks::current_streak(dates, today),
-        longest_streak: streaks::longest_streak(dates),
+        current_streak: streaks::current_streak(&dates, today),
+        longest_streak: streaks::longest_streak(&dates),
         completed_today: dates.contains(&today),
-        total_completions: dates.len() as u32,
-        recent_days: streaks::recent_days(dates, today, 7),
+        total_completions: completions.len() as u32,
+        total_minutes: completions.iter().map(|c| c.minutes).sum(),
+        total_xp: completions.iter().map(|c| c.xp).sum(),
+        today_log: completions.iter().find(|c| c.date == today).cloned(),
+        recent_days: streaks::recent_days(&dates, today, 7),
         habit,
     }
 }
 
 pub async fn summary(pool: &SqlitePool, id: i64, today: NaiveDate) -> AppResult<HabitSummary> {
     let habit = get(pool, id).await?;
-    let dates = completion_dates(pool, id).await?;
-    Ok(summarize(habit, &dates, today))
+    let completions = completions(pool, id).await?;
+    Ok(summarize(habit, &completions, today))
 }
 
 pub async fn summaries(pool: &SqlitePool, today: NaiveDate) -> AppResult<Vec<HabitSummary>> {
     let mut out = Vec::new();
     for habit in list(pool).await? {
-        let dates = completion_dates(pool, habit.id).await?;
-        out.push(summarize(habit, &dates, today));
+        let completions = completions(pool, habit.id).await?;
+        out.push(summarize(habit, &completions, today));
     }
     Ok(out)
 }
 
 pub async fn details(pool: &SqlitePool, id: i64, today: NaiveDate) -> AppResult<HabitDetails> {
     let habit = get(pool, id).await?;
-    let completions = completion_dates(pool, id).await?;
+    let completions = completions(pool, id).await?;
     Ok(HabitDetails {
         summary: summarize(habit, &completions, today),
         completions,
     })
 }
 
-/// XP per skill: one point per completion of any habit tagged with that skill.
+/// XP and streaks per skill, from every completion of the skill's habits.
+/// A skill's streak counts days on which *any* of its habits was done.
 /// Skills with habits but no completions yet show up with 0 XP.
-pub async fn skill_progress(pool: &SqlitePool) -> AppResult<Vec<SkillProgress>> {
-    let rows: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT h.skill, COUNT(c.id)
+pub async fn skill_progress(pool: &SqlitePool, today: NaiveDate) -> AppResult<Vec<SkillProgress>> {
+    let rows: Vec<(String, Option<String>, Option<i64>, Option<i64>)> = sqlx::query_as(
+        "SELECT h.skill, c.date, c.minutes, c.difficulty
          FROM habits h
          LEFT JOIN habit_completions c ON c.habit_id = h.id
-         WHERE h.skill IS NOT NULL AND h.archived = 0
-         GROUP BY h.skill
-         ORDER BY COUNT(c.id) DESC, h.skill",
+         WHERE h.skill IS NOT NULL AND h.archived = 0",
     )
     .fetch_all(pool)
     .await?;
-    Ok(rows
+
+    let mut by_skill: BTreeMap<String, Vec<Completion>> = BTreeMap::new();
+    for (skill, date, minutes, difficulty) in rows {
+        let entry = by_skill.entry(skill).or_default();
+        if let Some(date) = date {
+            entry.push(to_completion(&date, minutes.unwrap_or(0), difficulty.unwrap_or(1))?);
+        }
+    }
+
+    let mut out: Vec<SkillProgress> = by_skill
         .into_iter()
-        .map(|(skill, xp)| skills::progress(skill, xp as u32))
-        .collect())
+        .map(|(skill, completions)| {
+            let dates = dates_of(&completions);
+            let mut p = skills::progress(skill, completions.iter().map(|c| c.xp).sum());
+            p.current_streak = streaks::current_streak(&dates, today);
+            p.longest_streak = streaks::longest_streak(&dates);
+            p
+        })
+        .collect();
+    out.sort_by(|a, b| b.xp.cmp(&a.xp).then_with(|| a.skill.cmp(&b.skill)));
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -178,6 +237,13 @@ mod tests {
 
     fn d(s: &str) -> NaiveDate {
         NaiveDate::parse_from_str(s, DATE_FORMAT).unwrap()
+    }
+
+    /// A plain completion: no time tracked, easiest difficulty (10 XP).
+    const PLAIN: CompletionInput = CompletionInput { minutes: 0, difficulty: 1 };
+
+    fn log(minutes: u32, difficulty: u32) -> CompletionInput {
+        CompletionInput { minutes, difficulty }
     }
 
     fn input(name: &str, skill: Option<&str>) -> HabitInput {
@@ -230,14 +296,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn completing_twice_a_day_counts_once_and_undo_works() {
+    async fn logging_twice_a_day_counts_once_and_undo_works() {
         let pool = db::test_pool().await;
         let today = d("2026-11-14");
         let h = create(&pool, input("Read", None)).await.unwrap();
 
-        complete(&pool, h.id, today).await.unwrap();
-        complete(&pool, h.id, today).await.unwrap();
-        complete(&pool, h.id, today).await.unwrap();
+        complete(&pool, h.id, today, PLAIN).await.unwrap();
+        complete(&pool, h.id, today, PLAIN).await.unwrap();
+        complete(&pool, h.id, today, PLAIN).await.unwrap();
         let s = summary(&pool, h.id, today).await.unwrap();
         assert_eq!(s.total_completions, 1);
         assert!(s.completed_today);
@@ -254,20 +320,20 @@ mod tests {
         let pool = db::test_pool().await;
         let h = create(&pool, input("Exercise", None)).await.unwrap();
         for day in ["2026-11-10", "2026-11-11", "2026-11-13", "2026-11-14"] {
-            complete(&pool, h.id, d(day)).await.unwrap();
+            complete(&pool, h.id, d(day), PLAIN).await.unwrap();
         }
         let det = details(&pool, h.id, d("2026-11-14")).await.unwrap();
         assert_eq!(det.summary.current_streak, 2);
         assert_eq!(det.summary.longest_streak, 2);
         assert_eq!(det.completions.len(), 4);
-        assert_eq!(det.completions[0], d("2026-11-10"));
+        assert_eq!(det.completions[0].date, d("2026-11-10"));
     }
 
     #[tokio::test]
     async fn deleting_habit_removes_completions() {
         let pool = db::test_pool().await;
         let h = create(&pool, input("Exercise", None)).await.unwrap();
-        complete(&pool, h.id, d("2026-11-14")).await.unwrap();
+        complete(&pool, h.id, d("2026-11-14"), PLAIN).await.unwrap();
         delete(&pool, h.id).await.unwrap();
         let (n,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM habit_completions")
             .fetch_one(&pool)
@@ -280,26 +346,80 @@ mod tests {
     async fn completing_missing_habit_is_not_found() {
         let pool = db::test_pool().await;
         assert!(matches!(
-            complete(&pool, 99, d("2026-11-14")).await,
+            complete(&pool, 99, d("2026-11-14"), PLAIN).await,
             Err(AppError::NotFound(99))
         ));
     }
 
     #[tokio::test]
-    async fn skill_xp_is_derived_from_completions() {
+    async fn logging_again_replaces_the_days_entry() {
+        let pool = db::test_pool().await;
+        let today = d("2026-11-14");
+        let h = create(&pool, input("Read", None)).await.unwrap();
+
+        complete(&pool, h.id, today, log(20, 1)).await.unwrap();
+        complete(&pool, h.id, today, log(45, 3)).await.unwrap();
+        let s = summary(&pool, h.id, today).await.unwrap();
+        assert_eq!(s.total_completions, 1);
+        assert_eq!(s.total_minutes, 45);
+        assert_eq!(s.total_xp, skills::completion_xp(45, 3));
+        let today_log = s.today_log.unwrap();
+        assert_eq!((today_log.minutes, today_log.difficulty), (45, 3));
+    }
+
+    #[tokio::test]
+    async fn invalid_logs_are_rejected() {
+        let pool = db::test_pool().await;
+        let h = create(&pool, input("Read", None)).await.unwrap();
+        let today = d("2026-11-14");
+        for bad in [log(0, 0), log(0, 6), log(24 * 60 + 1, 2)] {
+            assert!(matches!(
+                complete(&pool, h.id, today, bad).await,
+                Err(AppError::Invalid(_))
+            ));
+        }
+        assert_eq!(summary(&pool, h.id, today).await.unwrap().total_completions, 0);
+    }
+
+    #[tokio::test]
+    async fn skill_xp_comes_from_time_and_difficulty() {
         let pool = db::test_pool().await;
         let run = create(&pool, input("Run", Some("Fitness"))).await.unwrap();
         let gym = create(&pool, input("Gym", Some("Fitness"))).await.unwrap();
         create(&pool, input("Read", Some("Knowledge"))).await.unwrap();
         create(&pool, input("Untagged", None)).await.unwrap();
 
-        complete(&pool, run.id, d("2026-11-13")).await.unwrap();
-        complete(&pool, run.id, d("2026-11-14")).await.unwrap();
-        complete(&pool, gym.id, d("2026-11-14")).await.unwrap();
+        complete(&pool, run.id, d("2026-11-13"), log(30, 2)).await.unwrap(); // 60
+        complete(&pool, run.id, d("2026-11-14"), PLAIN).await.unwrap(); // 10
+        complete(&pool, gym.id, d("2026-11-14"), log(60, 3)).await.unwrap(); // 140
 
-        let skills = skill_progress(&pool).await.unwrap();
+        let skills = skill_progress(&pool, d("2026-11-14")).await.unwrap();
         let pairs: Vec<_> = skills.iter().map(|s| (s.skill.as_str(), s.xp)).collect();
-        assert_eq!(pairs, vec![("Fitness", 3), ("Knowledge", 0)]);
+        assert_eq!(pairs, vec![("Fitness", 210), ("Knowledge", 0)]);
+        assert_eq!(skills[0].level, 2);
+    }
+
+    #[tokio::test]
+    async fn skill_streak_counts_days_any_habit_was_done() {
+        let pool = db::test_pool().await;
+        let run = create(&pool, input("Run", Some("Fitness"))).await.unwrap();
+        let gym = create(&pool, input("Gym", Some("Fitness"))).await.unwrap();
+        let today = d("2026-11-14");
+
+        // Run and gym alternate, so neither habit has a long streak on its
+        // own, but Fitness was trained every day from the 11th to the 14th.
+        complete(&pool, run.id, d("2026-11-08"), PLAIN).await.unwrap();
+        complete(&pool, run.id, d("2026-11-11"), PLAIN).await.unwrap();
+        complete(&pool, gym.id, d("2026-11-12"), PLAIN).await.unwrap();
+        complete(&pool, run.id, d("2026-11-13"), PLAIN).await.unwrap();
+        complete(&pool, gym.id, d("2026-11-13"), PLAIN).await.unwrap();
+        complete(&pool, gym.id, d("2026-11-14"), PLAIN).await.unwrap();
+
+        let fitness = &skill_progress(&pool, today).await.unwrap()[0];
+        assert_eq!(fitness.current_streak, 4);
+        assert_eq!(fitness.longest_streak, 4);
+        assert_eq!(summary(&pool, run.id, today).await.unwrap().current_streak, 1);
+        assert_eq!(summary(&pool, gym.id, today).await.unwrap().current_streak, 3);
     }
 
     /// Definition of done: data survives closing and reopening the app.
@@ -314,8 +434,8 @@ mod tests {
 
         let pool = db::init_pool(&path).await.unwrap();
         let h = create(&pool, input("Exercise", Some("Fitness"))).await.unwrap();
-        complete(&pool, h.id, d("2026-11-13")).await.unwrap();
-        complete(&pool, h.id, today).await.unwrap();
+        complete(&pool, h.id, d("2026-11-13"), PLAIN).await.unwrap();
+        complete(&pool, h.id, today, PLAIN).await.unwrap();
         pool.close().await;
 
         // "Reopen the app": new pool on the same file, migrations re-run harmlessly.

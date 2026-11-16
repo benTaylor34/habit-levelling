@@ -1,5 +1,7 @@
 import type { HabitSummary } from "../lib/types";
-import { CheckIcon } from "./Icons";
+import { difficultyLabel } from "../lib/types";
+import { formatMinutes } from "../lib/dates";
+import { BoltIcon, CheckIcon } from "./Icons";
 import { StreakBadge } from "./StreakBadge";
 
 interface Props {
@@ -25,7 +27,7 @@ export function HabitCard({ habit, busy, onToggle, onOpen }: Props) {
         className="check"
         aria-pressed={habit.completedToday}
         aria-label={habit.completedToday ? `Undo ${habit.name}` : `Complete ${habit.name}`}
-        title={habit.completedToday ? "Completed today · click to undo" : "Mark complete"}
+        title={habit.completedToday ? "Completed today · click to undo" : "Log today"}
         disabled={busy}
         onClick={() => onToggle(habit)}
       >
@@ -37,6 +39,14 @@ export function HabitCard({ habit, busy, onToggle, onOpen }: Props) {
         <span className="habit-meta">
           <StreakBadge days={habit.currentStreak} />
           {habit.skill && <span className="skill-tag">{habit.skill}</span>}
+          {habit.todayLog && (
+            <span className="log-meta" title={difficultyLabel(habit.todayLog.difficulty)}>
+              {formatMinutes(habit.todayLog.minutes) || difficultyLabel(habit.todayLog.difficulty)}
+              <span className="xp-gain">
+                <BoltIcon size={12} />+{habit.todayLog.xp} XP
+              </span>
+            </span>
+          )}
         </span>
       </button>
 

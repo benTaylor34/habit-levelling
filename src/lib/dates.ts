@@ -21,3 +21,12 @@ export function formatLong(iso: IsoDate): string {
     month: "long",
   });
 }
+
+/** 95 -> "1h 35m", 30 -> "30 min", 0 -> "" (time not tracked). */
+export function formatMinutes(minutes: number): string {
+  if (minutes <= 0) return "";
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}

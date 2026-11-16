@@ -1,4 +1,5 @@
 import type { SkillProgress } from "../lib/types";
+import { StreakBadge } from "./StreakBadge";
 
 export function SkillPanel({ skills }: { skills: SkillProgress[] }) {
   return (
@@ -24,8 +25,8 @@ export function SkillPanel({ skills }: { skills: SkillProgress[] }) {
                 <div className="skill-info">
                   <div className="skill-top">
                     <span className="skill-name">{s.skill}</span>
-                    <span className="muted tiny">
-                      {s.xpIntoLevel}/{s.xpForNextLevel} XP
+                    <span title={`Longest: ${s.longestStreak} days`}>
+                      <StreakBadge days={s.currentStreak} compact />
                     </span>
                   </div>
                   <div
@@ -36,6 +37,9 @@ export function SkillPanel({ skills }: { skills: SkillProgress[] }) {
                     aria-valuemax={s.xpForNextLevel}
                   >
                     <div style={{ width: `${(s.xpIntoLevel / s.xpForNextLevel) * 100}%` }} />
+                  </div>
+                  <div className="muted tiny skill-xp">
+                    {s.xpIntoLevel}/{s.xpForNextLevel} XP to level {s.level + 1}
                   </div>
                 </div>
               </div>

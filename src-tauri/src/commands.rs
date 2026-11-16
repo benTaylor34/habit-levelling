@@ -6,8 +6,10 @@ use sqlx::SqlitePool;
 use tauri::State;
 
 use crate::error::AppResult;
-use crate::habits;
-use crate::models::{Habit, HabitDetails, HabitInput, HabitSummary, SkillProgress};
+use crate::models::{
+    CompletionInput, Habit, HabitDetails, HabitInput, HabitSummary, SkillProgress,
+};
+use crate::{habits, skills};
 
 /// "Today" is the user's *local* calendar date, not a UTC timestamp.
 fn today() -> NaiveDate {
@@ -52,9 +54,10 @@ pub async fn delete_habit(pool: State<'_, SqlitePool>, id: i64) -> AppResult<()>
 pub async fn complete_habit_today(
     pool: State<'_, SqlitePool>,
     id: i64,
+    log: CompletionInput,
 ) -> AppResult<HabitSummary> {
     let today = today();
-    habits::complete(&pool, id, today).await?;
+    habits::complete(&pool, id, today, log).await?;
     habits::summary(&pool, id, today).await
 }
 
@@ -67,5 +70,11 @@ pub async fn undo_habit_today(pool: State<'_, SqlitePool>, id: i64) -> AppResult
 
 #[tauri::command]
 pub async fn get_skill_progress(pool: State<'_, SqlitePool>) -> AppResult<Vec<SkillProgress>> {
-    habits::skill_progress(&pool).await
+    habits::skill_progress(&pool, today()).await
+}
+
+/// XP a log would earn, so the form can preview it without duplicating the formula.
+#[tauri::command]
+pub fn preview_xp(minutes: u32, difficulty: u32) -> u32 {
+    skills::completion_xp(minutes, difficulty)
 }
