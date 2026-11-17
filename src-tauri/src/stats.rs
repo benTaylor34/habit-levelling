@@ -48,14 +48,24 @@ pub fn difficulty_percent(difficulty: u32) -> u32 {
     50 + 50 * difficulty.clamp(MIN_DIFFICULTY, MAX_DIFFICULTY)
 }
 
-/// Streak bonus as a percentage: +5% for every day the streak has run
-/// beyond the first, capped at +100% (×2) from a 21-day streak onwards.
-/// Day 1 = ×1, day 7 = ×1.3, day 14 = ×1.65, day 21+ = ×2.
+/// Streak bonus as a percentage. It ramps up fast, then keeps creeping up:
+///
+/// - +5% for every day the streak has run beyond the first, reaching ×2 on day 21.
+/// - After that, +1% for every full week past day 21, up to ×2.5 (day 371, about a year).
+///
+/// Day 1 = ×1, day 7 = ×1.3, day 21 = ×2, day 28 = ×2.01, day 371+ = ×2.5.
 pub const STREAK_BONUS_PER_DAY: u32 = 5;
-pub const MAX_STREAK_BONUS: u32 = 100;
+/// Bonus from the daily ramp, reached on `STREAK_RAMP_DAYS`.
+pub const STREAK_RAMP_BONUS: u32 = 100;
+pub const STREAK_RAMP_DAYS: u32 = 21;
+/// Slow growth after the ramp: +1% per full week.
+pub const STREAK_BONUS_PER_WEEK: u32 = 1;
+pub const MAX_STREAK_BONUS: u32 = 150;
 
 pub fn streak_percent(streak: u32) -> u32 {
-    100 + (streak.saturating_sub(1) * STREAK_BONUS_PER_DAY).min(MAX_STREAK_BONUS)
+    let ramp = (streak.saturating_sub(1) * STREAK_BONUS_PER_DAY).min(STREAK_RAMP_BONUS);
+    let weeks = streak.saturating_sub(STREAK_RAMP_DAYS) / 7;
+    100 + (ramp + weeks * STREAK_BONUS_PER_WEEK).min(MAX_STREAK_BONUS)
 }
 
 /// XP for one completion, which the habit's primary stat gets in full:
@@ -74,17 +84,26 @@ pub fn secondary_xp(primary_xp: u32) -> u32 {
     primary_xp / 2
 }
 
-/// Total XP needed to *reach* `level`, using Pokémon's "medium fast" cubic
-/// curve (n³) scaled by 10 and shifted so level 1 starts at 0 XP.
-pub fn total_xp_for_level(level: u32) -> u32 {
-    10 * (level.pow(3) - 1)
+/// XP needed to go from `level` to `level + 1`: 10 XP for 1→2, so any first
+/// completion levels a stat up, then each level costs 40 more than the one
+/// before: 1→2 = 10, 2→3 = 50, 5→6 = 170, 10→11 = 370, 50→51 = 1,970,
+/// 99→100 = 3,930.
+pub fn xp_for_next_level(level: u32) -> u32 {
+    FIRST_LEVEL_XP + LEVEL_XP_STEP * level.saturating_sub(1)
 }
 
-/// XP needed to go from `level` to `level + 1`. Grows quadratically, so low
-/// levels come quickly and high levels take real commitment:
-/// 1→2 = 70, 2→3 = 190, 5→6 = 910, 10→11 = 3,310, 50→51 = 76,510.
-pub fn xp_for_next_level(level: u32) -> u32 {
-    total_xp_for_level(level + 1) - total_xp_for_level(level)
+/// XP cost of levelling from 1 to 2.
+pub const FIRST_LEVEL_XP: u32 = 10;
+/// How much more each level costs than the one before.
+pub const LEVEL_XP_STEP: u32 = 40;
+
+/// Total XP needed to *reach* `level` (level 1 starts at 0 XP). Level 100
+/// takes 195,030 XP: about 11 months of 2 hours a day at Hard on a streak.
+/// Only tests need it; the app walks level by level in `level_for_xp`.
+#[cfg(test)]
+pub fn total_xp_for_level(level: u32) -> u32 {
+    let n = level.saturating_sub(1);
+    FIRST_LEVEL_XP * n + LEVEL_XP_STEP * n * n.saturating_sub(1) / 2
 }
 
 /// Turn a total XP figure into level progress. The XP bar shows
@@ -134,22 +153,24 @@ mod tests {
     #[test]
     fn xp_resets_each_level() {
         assert_eq!(lvl(0), (1, 0));
-        assert_eq!(lvl(69), (1, 69));
-        assert_eq!(lvl(70), (2, 0));
-        assert_eq!(lvl(259), (2, 189));
-        assert_eq!(lvl(260), (3, 0));
+        assert_eq!(lvl(9), (1, 9));
+        assert_eq!(lvl(10), (2, 0));
+        assert_eq!(lvl(59), (2, 49));
+        assert_eq!(lvl(60), (3, 0));
     }
 
     #[test]
     fn each_level_costs_more_than_the_last() {
         let costs: Vec<u32> = (1..MAX_LEVEL).map(xp_for_next_level).collect();
-        assert_eq!(&costs[..5], &[70, 190, 370, 610, 910]);
+        assert_eq!(&costs[..5], &[10, 50, 90, 130, 170]);
         assert!(costs.windows(2).all(|w| w[1] > w[0]));
     }
 
     #[test]
-    fn total_xp_matches_cubic_curve() {
-        for level in 1..=20 {
+    fn total_xp_matches_the_sum_of_level_costs() {
+        for level in 1..=MAX_LEVEL {
+            let sum: u32 = (1..level).map(xp_for_next_level).sum();
+            assert_eq!(total_xp_for_level(level), sum);
             let p = progress(Stat::Wisdom, total_xp_for_level(level));
             assert_eq!((p.level, p.xp_into_level), (level, 0));
         }
@@ -171,12 +192,36 @@ mod tests {
     }
 
     #[test]
-    fn longer_streaks_give_more_xp_up_to_double() {
+    fn any_first_completion_reaches_level_2() {
+        let smallest = completion_xp(0, MIN_DIFFICULTY, 1);
+        assert_eq!(progress(Stat::Strength, smallest).level, 2);
+    }
+
+    #[test]
+    fn a_year_of_hard_two_hour_days_reaches_level_100() {
+        let mut xp = 0;
+        let mut day_100 = None;
+        for day in 1..=365 {
+            xp += completion_xp(120, 3, day);
+            if day_100.is_none() && progress(Stat::Strength, xp).level == MAX_LEVEL {
+                day_100 = Some(day);
+            }
+        }
+        let day_100 = day_100.expect("level 100 within a year");
+        assert!((300..=365).contains(&day_100), "reached on day {day_100}");
+    }
+
+    #[test]
+    fn longer_streaks_give_more_xp_fast_then_slowly() {
         assert_eq!(streak_percent(0), 100);
         assert_eq!(streak_percent(1), 100);
         assert_eq!(streak_percent(7), 130);
         assert_eq!(streak_percent(21), 200);
-        assert_eq!(streak_percent(365), 200);
+        assert_eq!(streak_percent(27), 200);
+        assert_eq!(streak_percent(28), 201);
+        assert_eq!(streak_percent(365), 249);
+        assert_eq!(streak_percent(371), 250);
+        assert_eq!(streak_percent(5000), 250);
         assert_eq!(completion_xp(30, 3, 1), 80);
         assert_eq!(completion_xp(30, 3, 7), 104);
         assert_eq!(completion_xp(30, 3, 30), 160);
@@ -188,6 +233,6 @@ mod tests {
         assert_eq!(completion_xp(0, 9, 1), completion_xp(0, 5, 1));
         assert_eq!(completion_xp(10_000, 1, 1), completion_xp(MAX_MINUTES, 1, 1));
         // Largest possible XP doesn't overflow.
-        assert_eq!(completion_xp(MAX_MINUTES, 5, 1000), (10 + MAX_MINUTES) * 6);
+        assert_eq!(completion_xp(MAX_MINUTES, 5, 1000), (10 + MAX_MINUTES) * 3 * 250 / 100);
     }
 }

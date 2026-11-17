@@ -147,6 +147,7 @@ export function Dashboard({ today, onOpen }: Props) {
                 habit={h}
                 busy={busyId === h.id}
                 onToggle={toggle}
+                onAddTime={setLogging}
                 onOpen={onOpen}
               />
             ))
@@ -186,6 +187,7 @@ export function Dashboard({ today, onOpen }: Props) {
       {logging && (
         <LogForm
           habit={logging}
+          initial={logging.todayLog}
           onCancel={() => setLogging(null)}
           onSubmit={(log) => logToday(logging, log)}
         />

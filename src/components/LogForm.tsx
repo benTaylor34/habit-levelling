@@ -1,43 +1,58 @@
 import { useEffect, useState } from "react";
 import { api, errorMessage } from "../lib/tauri";
-import type { Completion, CompletionInput, Habit, XpPreview } from "../lib/types";
+import type { Completion, CompletionInput, HabitSummary, XpPreview } from "../lib/types";
 import { DIFFICULTY_LABELS, statInfo } from "../lib/types";
 import { formatMinutes } from "../lib/dates";
 import { BoltIcon, CheckIcon, FlameIcon } from "./Icons";
 
 interface Props {
-  habit: Habit;
-  /** Today's existing log when editing it. */
+  habit: HabitSummary;
+  /** Today's existing log, when the habit is already done today. */
   initial?: Completion | null;
   onSubmit: (log: CompletionInput) => Promise<void>;
   onCancel: () => void;
 }
 
-const QUICK_MINUTES = [15, 30, 45, 60, 90];
+/** Longest day the backend accepts, and the most that can be entered. */
+const MAX_DAY_MINUTES = 24 * 60;
+/** The quick-add buttons, in minutes. */
+const TIME_BUTTONS = [5, 10, 30];
 
-/** Popup shown when completing a habit: time spent + how hard it was. */
+const showMinutes = (m: number) => formatMinutes(m) || "0 min";
+
+type Mode = "add" | "edit";
+
+/**
+ * Popup shown when completing a habit: time spent + how hard it was. If the
+ * habit is already done today it can add another session's time to today's
+ * log (the default) or edit the day's total.
+ */
 export function LogForm({ habit, initial, onSubmit, onCancel }: Props) {
-  const [minutes, setMinutes] = useState(initial ? String(initial.minutes) : "");
+  const [mode, setMode] = useState<Mode>(initial ? "add" : "edit");
+  // Time entered so far: the session being added, or the day's total.
+  const [mins, setMins] = useState(0);
   const [difficulty, setDifficulty] = useState(initial?.difficulty ?? 2);
+  const [typing, setTyping] = useState<string | null>(null);
   const [xp, setXp] = useState<XpPreview | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const mins = minutes.trim() === "" ? 0 : Number(minutes);
-  const minutesValid = Number.isInteger(mins) && mins >= 0 && mins <= 1440;
+  const adding = mode === "add" && !!initial;
+  const sofar = adding ? initial.minutes : 0;
+  const maxMins = MAX_DAY_MINUTES - sofar;
+  const total = Math.min(MAX_DAY_MINUTES, sofar + mins);
 
   // XP is calculated in Rust; ask it for a preview whenever the inputs change.
   useEffect(() => {
-    if (!minutesValid) return;
     let stale = false;
     api
-      .previewXp(habit.id, { minutes: mins, difficulty })
+      .previewXp(habit.id, { minutes: total, difficulty })
       .then((v) => !stale && setXp(v))
       .catch(() => {});
     return () => {
       stale = true;
     };
-  }, [habit.id, mins, difficulty, minutesValid]);
+  }, [habit.id, total, difficulty]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
@@ -45,13 +60,28 @@ export function LogForm({ habit, initial, onSubmit, onCancel }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel]);
 
+  function switchMode(next: Mode) {
+    setMode(next);
+    setTyping(null);
+    setMins(next === "add" ? 0 : (initial?.minutes ?? 0));
+  }
+
+  /** Apply a typed time, ignoring anything that isn't a sensible number. */
+  function commitTyped() {
+    if (typing === null) return;
+    const n = Math.round(Number(typing));
+    if (typing.trim() !== "" && Number.isFinite(n)) {
+      setMins(Math.min(maxMins, Math.max(0, n)));
+    }
+    setTyping(null);
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!minutesValid) return;
     setSaving(true);
     setError(null);
     try {
-      await onSubmit({ minutes: mins, difficulty });
+      await onSubmit({ minutes: total, difficulty });
     } catch (err) {
       setError(errorMessage(err));
       setSaving(false);
@@ -62,39 +92,117 @@ export function LogForm({ habit, initial, onSubmit, onCancel }: Props) {
     <div className="modal-backdrop" onClick={onCancel}>
       <form className="modal" onSubmit={submit} onClick={(e) => e.stopPropagation()}>
         <div>
-          <h2>{initial ? "Edit today's log" : "Nice work!"}</h2>
+          <h2>{initial ? "Today's log" : "Nice work!"}</h2>
           <p className="muted small">
-            How did <strong className="text">{habit.name}</strong> go today?
+            {initial ? (
+              <>
+                <strong className="text">{habit.name}</strong> is done today with{" "}
+                {showMinutes(initial.minutes)} logged.
+              </>
+            ) : (
+              <>
+                How did <strong className="text">{habit.name}</strong> go today?
+              </>
+            )}
           </p>
         </div>
 
-        <label>
-          <span>
-            Time spent <span className="muted">(minutes)</span>
-          </span>
-          <input
-            autoFocus
-            type="number"
-            inputMode="numeric"
-            min={0}
-            max={1440}
-            step={1}
-            value={minutes}
-            onChange={(e) => setMinutes(e.target.value)}
-            placeholder="0"
-          />
-        </label>
-        <div className="chips" role="group" aria-label="Quick time">
-          {QUICK_MINUTES.map((m) => (
-            <button
-              key={m}
-              type="button"
-              className={`chip ${mins === m ? "selected" : ""}`}
-              onClick={() => setMinutes(String(m))}
-            >
-              {formatMinutes(m)}
-            </button>
-          ))}
+        {initial && (
+          <div className="segmented log-mode" role="radiogroup" aria-label="Change today's log">
+            {(
+              [
+                ["add", "Add time"],
+                ["edit", "Edit total"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={mode === value}
+                className={mode === value ? "selected" : ""}
+                onClick={() => switchMode(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="field">
+          <span className="field-label">{adding ? "Time to add" : "Time spent"}</span>
+          <div className="time-entry">
+            {typing === null ? (
+              <button
+                type="button"
+                className="time-value"
+                onClick={() => setTyping(mins ? String(mins) : "")}
+                title="Type an exact time"
+              >
+                {adding && "+"}
+                {showMinutes(mins)}
+              </button>
+            ) : (
+              <span className="time-typed">
+                <input
+                  autoFocus
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={maxMins}
+                  step={1}
+                  value={typing}
+                  placeholder="0"
+                  aria-label="Minutes"
+                  onChange={(e) => setTyping(e.target.value)}
+                  onBlur={commitTyped}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      commitTyped();
+                    } else if (e.key === "Escape") {
+                      e.stopPropagation(); // cancel typing, not the whole form
+                      setTyping(null);
+                    }
+                  }}
+                />
+                min
+              </span>
+            )}
+            <div className="time-buttons">
+              {TIME_BUTTONS.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className="time-add"
+                  disabled={mins >= maxMins}
+                  onClick={() => {
+                    setTyping(null);
+                    setMins((v) => Math.min(maxMins, v + m));
+                  }}
+                >
+                  +{m} min
+                </button>
+              ))}
+              <button
+                type="button"
+                className="time-reset"
+                disabled={mins === 0}
+                onClick={() => {
+                  setTyping(null);
+                  setMins(0);
+                }}
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+          {adding && (
+            <p className="muted small time-total">
+              {showMinutes(sofar)} + {showMinutes(mins)} ={" "}
+              <strong className="text">{showMinutes(total)}</strong> today
+            </p>
+          )}
         </div>
 
         <div className="field">
@@ -135,11 +243,10 @@ export function LogForm({ habit, initial, onSubmit, onCancel }: Props) {
           </div>
         )}
 
-        {!minutesValid && <p className="error">Enter a whole number of minutes, up to 24 hours.</p>}
         {error && <p className="error">{error}</p>}
 
         <div className="modal-actions log-actions">
-          <span className="xp-preview" aria-live="polite">
+          <span className="xp-preview" aria-live="polite" title={initial ? "Today's total XP" : undefined}>
             <BoltIcon size={16} />
             {habit.primaryStat ? (
               <>
@@ -159,9 +266,9 @@ export function LogForm({ habit, initial, onSubmit, onCancel }: Props) {
           <button type="button" className="btn ghost" onClick={onCancel}>
             Cancel
           </button>
-          <button type="submit" className="btn primary" disabled={saving || !minutesValid}>
+          <button type="submit" className="btn primary" disabled={saving || typing !== null || mins === 0}>
             <CheckIcon size={16} strokeWidth={2.5} />
-            {initial ? "Save" : "Log it"}
+            {adding ? "Add time" : initial ? "Save" : "Log it"}
           </button>
         </div>
       </form>

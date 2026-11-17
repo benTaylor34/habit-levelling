@@ -1,19 +1,21 @@
 import type { HabitSummary } from "../lib/types";
 import { difficultyLabel, statInfo } from "../lib/types";
 import { formatMinutes } from "../lib/dates";
-import { BoltIcon, CheckIcon, WarningIcon } from "./Icons";
+import { BoltIcon, CheckIcon, PlusIcon, WarningIcon } from "./Icons";
 import { StreakBadge } from "./StreakBadge";
 
 interface Props {
   habit: HabitSummary;
   busy: boolean;
   onToggle: (habit: HabitSummary) => void;
+  /** Add another session's time to today's log. */
+  onAddTime: (habit: HabitSummary) => void;
   onOpen: (id: number) => void;
 }
 
 const WEEKDAY = ["S", "M", "T", "W", "T", "F", "S"];
 
-export function HabitCard({ habit, busy, onToggle, onOpen }: Props) {
+export function HabitCard({ habit, busy, onToggle, onAddTime, onOpen }: Props) {
   // Labels for the last-7-days strip (ending today).
   const labels = habit.recentDays.map((_, i) => {
     const d = new Date();
@@ -77,6 +79,19 @@ export function HabitCard({ habit, busy, onToggle, onOpen }: Props) {
           )}
         </span>
       </button>
+
+      {habit.completedToday && (
+        <button
+          className="btn ghost add-time"
+          disabled={busy}
+          onClick={() => onAddTime(habit)}
+          title="Add another session to today's log"
+          aria-label={`Add time to ${habit.name}`}
+        >
+          <PlusIcon size={14} strokeWidth={2.4} />
+          Time
+        </button>
+      )}
 
       <div className="week" aria-label="Last 7 days">
         {habit.recentDays.map((done, i) => (

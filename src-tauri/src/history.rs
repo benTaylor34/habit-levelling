@@ -134,26 +134,26 @@ mod tests {
     #[test]
     fn xp_before_the_range_is_the_starting_point() {
         let gains = [
-            gain("2026-10-29", Strength, 100), // level 2 (70) with 30 into it
-            gain("2026-11-02", Strength, 160), // 260 total = exactly level 3
+            gain("2026-10-29", Strength, 20), // level 2 (10) with 10 into it
+            gain("2026-11-02", Strength, 40), // 60 total = exactly level 3
         ];
         let h = build(&gains, d("2026-11-01"), d("2026-11-03"));
         let s = series(&h, Strength);
-        assert_eq!(s.xp, vec![100, 260, 260]);
-        assert_eq!((s.start_level, s.end_level, s.xp_gained, s.xp_decayed), (2, 3, 160, 0));
-        assert_eq!(s.level, vec![2.16, 3.0, 3.0]); // 30/190 into level 2
+        assert_eq!(s.xp, vec![20, 60, 60]);
+        assert_eq!((s.start_level, s.end_level, s.xp_gained, s.xp_decayed), (2, 3, 40, 0));
+        assert_eq!(s.level, vec![2.2, 3.0, 3.0]); // 10/50 into level 2
     }
 
     #[test]
     fn history_shows_decay_after_a_week_idle() {
-        let gains = [gain("2026-11-01", Wisdom, 260 + 200)]; // level 3, 200 into it
+        let gains = [gain("2026-11-01", Wisdom, 60 + 50)]; // level 3, 50 into it
         let h = build(&gains, d("2026-11-01"), d("2026-11-10"));
         let s = series(&h, Wisdom);
-        let loss = decay::daily_loss(3); // 37 a day
-        assert_eq!(s.xp[6], 460, "Nov 7: day 6, still in grace");
-        assert_eq!(s.xp[7], 460 - loss, "Nov 8: first day of decay");
-        assert_eq!(s.xp[9], 460 - 3 * loss);
-        assert_eq!((s.xp_gained, s.xp_decayed), (460, 3 * loss));
+        let loss = decay::daily_loss(3); // 9 a day
+        assert_eq!(s.xp[6], 110, "Nov 7: day 6, still in grace");
+        assert_eq!(s.xp[7], 110 - loss, "Nov 8: first day of decay");
+        assert_eq!(s.xp[9], 110 - 3 * loss);
+        assert_eq!((s.xp_gained, s.xp_decayed), (110, 3 * loss));
         assert_eq!(s.end_level, 3, "level kept");
     }
 

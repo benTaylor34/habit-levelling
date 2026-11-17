@@ -568,9 +568,9 @@ mod tests {
             ],
             "all six stats are always listed; Luck stays hidden"
         );
-        // 207 XP: level 2 needs 70, level 3 needs 70 + 190 = 260.
+        // 207 XP: level 4 needs 150, level 5 needs 150 + 130 = 280.
         let int = stat(&all, Intelligence);
-        assert_eq!((int.level, int.xp_into_level, int.xp_for_next_level), (2, 137, 190));
+        assert_eq!((int.level, int.xp_into_level, int.xp_for_next_level), (4, 57, 130));
         assert_eq!(stat(&all, Dexterity).level, 1);
     }
 
@@ -654,18 +654,18 @@ mod tests {
     async fn stats_decay_after_a_week_without_xp() {
         let pool = db::test_pool().await;
         let h = create(&pool, input("Lift", Some(Strength), None)).await.unwrap();
-        complete(&pool, h.id, d("2026-11-01"), log(60, 3)).await.unwrap(); // 140 XP: level 2, 70 in
+        complete(&pool, h.id, d("2026-11-01"), log(60, 3)).await.unwrap(); // 140 XP: level 3, 80 in
 
         let p = |all: Vec<StatProgress>| stat(&all, Strength).clone();
         let day6 = p(stat_progress(&pool, d("2026-11-07")).await.unwrap());
         assert_eq!((day6.xp, day6.days_idle, day6.decay), (140, Some(6), DecayPhase::None));
 
         let day7 = p(stat_progress(&pool, d("2026-11-08")).await.unwrap());
-        assert_eq!(day7.xp, 140 - decay::daily_loss(2));
-        assert_eq!((day7.level, day7.decay), (2, DecayPhase::Xp));
+        assert_eq!(day7.xp, 140 - decay::daily_loss(3));
+        assert_eq!((day7.level, day7.decay), (3, DecayPhase::Xp));
 
         let day21 = p(stat_progress(&pool, d("2026-11-22")).await.unwrap());
-        assert_eq!((day21.level, day21.decay), (1, DecayPhase::Xp), "dropped to level 1");
+        assert_eq!((day21.level, day21.decay), (2, DecayPhase::Level), "dropped to level 2");
 
         // Training again stops the decay but doesn't refund it.
         complete(&pool, h.id, d("2026-11-22"), PLAIN).await.unwrap();

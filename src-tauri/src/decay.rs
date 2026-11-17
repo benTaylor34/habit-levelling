@@ -120,25 +120,24 @@ mod tests {
 
     #[test]
     fn xp_drains_from_day_7_but_the_level_is_kept() {
-        // The example from the brief: level 10 with 100 XP.
-        let xp = total_xp_for_level(10) + 100;
-        assert_eq!(daily_loss(10), 331);
-        assert_eq!(after(xp, 7), (10, 0), "100 < one day's loss, so empty in a day");
+        // Level 10 with 30 XP into it.
+        let xp = total_xp_for_level(10) + 30;
+        assert_eq!(daily_loss(10), 37);
+        assert_eq!(after(xp, 7), (10, 0), "30 < one day's loss, so empty in a day");
         assert_eq!(after(xp, 20), (10, 0), "level held until three weeks");
 
-        // A fuller bar takes several days: 1,000 into level 10 loses 331/day.
-        let xp = total_xp_for_level(10) + 1000;
-        assert_eq!(after(xp, 7), (10, 669));
-        assert_eq!(after(xp, 8), (10, 338));
-        assert_eq!(after(xp, 9), (10, 7));
-        assert_eq!(after(xp, 10), (10, 0));
+        // A fuller bar takes several days: 100 into level 10 loses 37/day.
+        let xp = total_xp_for_level(10) + 100;
+        assert_eq!(after(xp, 7), (10, 63));
+        assert_eq!(after(xp, 8), (10, 26));
+        assert_eq!(after(xp, 9), (10, 0));
     }
 
     #[test]
     fn levels_drop_from_day_21_landing_just_short_of_full() {
         let xp = total_xp_for_level(10) + 100;
-        let full9 = xp_for_next_level(9); // 2,710
-        let loss9 = daily_loss(9); // 271
+        let full9 = xp_for_next_level(9); // 330
+        let loss9 = daily_loss(9); // 33
         assert_eq!(after(xp, 21), (9, full9 - loss9));
         assert_eq!(after(xp, 22), (9, full9 - 2 * loss9));
         // 90% of the bar drains in 9 days; the next day drops another level.
@@ -155,7 +154,7 @@ mod tests {
     #[test]
     fn a_new_gain_resets_the_clock() {
         let start = d("2026-01-01");
-        let xp = total_xp_for_level(5) + 500;
+        let xp = total_xp_for_level(5) + 100;
         let gains = BTreeMap::from([(start, xp), (d("2026-01-09"), 10)]);
         let days = simulate(&gains, d("2026-01-15"));
         let by_day: BTreeMap<_, _> = days.into_iter().collect();
@@ -173,7 +172,7 @@ mod tests {
         assert_eq!(phase(xp, Some(7)), DecayPhase::Xp);
         assert_eq!(phase(xp, Some(21)), DecayPhase::Level);
         assert_eq!(phase(0, Some(40)), DecayPhase::None, "nothing left to lose");
-        assert_eq!(phase(30, Some(40)), DecayPhase::Xp, "level 1 can only lose XP");
+        assert_eq!(phase(5, Some(40)), DecayPhase::Xp, "level 1 can only lose XP");
         assert_eq!(phase(xp, None), DecayPhase::None);
     }
 }

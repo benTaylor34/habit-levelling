@@ -35,20 +35,20 @@ Each day you log a habit, its stats earn:
 | --- | --- | --- | --- | --- | --- |
 | Multiplier | ×1 | ×1.5 | ×2 | ×2.5 | ×3 |
 
-- **Streak bonus:** +5% for every day the habit's streak has run past the first, up to ×2 from day 21 onwards.
+- **Streak bonus:** +5% for every day the habit's streak has run past the first, reaching ×2 on day 21. After that it keeps growing slowly, +1% for every full week, up to ×2.5 after about a year (day 371).
 - **Primary and secondary stats:** the primary stat gets the full amount and the secondary stat gets half.
 
 For example, 30 minutes of Hard studying on day 7 of a streak gives **(10 + 30) × 2 × 1.3 = 104 Intelligence** and **52 Wisdom**.
 
 ### Levels
 
-Reaching level *n* takes 10 × (*n*³ − 1) XP in total, so each level costs more than the last:
+Level 1 → 2 costs just 10 XP, so the first completion of any habit levels its stat up. After that, each level costs 40 XP more than the one before:
 
-| Level up | 1 → 2 | 2 → 3 | 5 → 6 | 10 → 11 | 50 → 51 |
-| --- | --- | --- | --- | --- | --- |
-| XP needed | 70 | 190 | 910 | 3,310 | 76,510 |
+| Level up | 1 → 2 | 2 → 3 | 5 → 6 | 10 → 11 | 50 → 51 | 99 → 100 |
+| --- | --- | --- | --- | --- | --- | --- |
+| XP needed | 10 | 50 | 170 | 370 | 1,970 | 3,930 |
 
-The XP bar resets after every level up. Levels stop at 100.
+Level 100 takes 195,030 XP in total, which is about 11 months of a Hard 2-hour habit every day without breaking the streak. The XP bar resets after every level up. Levels stop at 100.
 
 ### Decay
 
