@@ -2,7 +2,7 @@
 
 **Turn your daily habits into an RPG character sheet.** Log what you do each day, keep your streaks alive, and level up six D&D-style stats, but let them slide and they start to fade.
 
-Habit Levelling is a local-first desktop app built with **Rust + Tauri**, **SQLite**, and a **React + TypeScript** interface. It runs entirely on your computer: no account, no server, no internet connection.
+Habit Levelling is a local-first app for **Windows and Android**, built with **Rust + Tauri**, **SQLite**, and a **React + TypeScript** interface. It runs entirely on your own device: no account, no server, no internet connection.
 
 ![The Today page: habits, stat radar and levels, and a year of activity (sample data)](docs/screenshots/today.png)
 
@@ -73,22 +73,27 @@ Whenever a habit's streak reaches a multiple of 7 days there's a 3% chance of +2
 
 ## Download
 
-Habit Levelling currently runs on **64-bit Windows 10 and 11**. Grab `habit_levelling.exe` from the [Releases](../../releases) page and run it. There's nothing to install.
+Grab the latest version from the [Releases](../../releases) page.
+
+**Windows** (64-bit Windows 10 and 11): download `habit_levelling.exe` and run it. There's nothing to install.
 
 > **"Windows protected your PC"?** The app isn't code-signed yet, so Windows warns about it the first time. Choose **More info → Run anyway**.
 
+**Android** (Android 7.0 or newer): download `habit-levelling.apk` on your phone and open it. Android asks you to allow installing apps from your browser or file manager the first time; allow it, then tap **Install**. Updates install over the top and keep your data.
+
 ## Your data
 
-Everything is saved in a single SQLite file on your own computer:
+Everything is saved in a single SQLite file on your own device:
 
 - Windows: `%APPDATA%\com.habitlevelling.app\habits.db`
+- Android: inside the app's private storage (removed if you uninstall the app, so export a backup first)
 
-Nothing is sent anywhere, and your data isn't synced between computers.
+Nothing is sent anywhere, and your data isn't synced between devices.
 
 Everything about backups is on the **Data** page:
 
-- **Export a backup** saves all your habits and daily logs as one readable `.json` file in your Downloads folder.
-- **Restore from a backup** replaces the app's data with a backup's contents, for example to move to a new PC. It shows what the file contains and asks first. Your current data is saved as a safety backup before anything is replaced, so a restore can always be undone.
+- **Export a backup** saves all your habits and daily logs as one readable `.json` file, wherever you choose.
+- **Restore from a backup** replaces the app's data with a backup's contents, for example to move to a new PC or phone. Backups work across Windows and Android. It shows what the file contains and asks first. Your current data is saved as a safety backup before anything is replaced, so a restore can always be undone.
 - **Automatic backups** are saved the first time you open the app each day, into a `backups` folder next to your data. The last 14 are kept.
 
 XP, levels, streaks and decay aren't stored in backups; they're rebuilt from your logs, so a restore brings them all back exactly.
@@ -122,6 +127,36 @@ Leave out `--no-bundle` to also build `.msi` and setup `.exe` installers under `
 cd src-tauri
 cargo test
 ```
+
+### Android
+
+You'll also need a JDK 17, the Android SDK with an NDK (r27 works), and Rust's Android targets:
+
+```bash
+rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+```
+
+Set `JAVA_HOME`, `ANDROID_HOME` and `NDK_HOME`, then build a debug APK for the emulator or run it on a connected device:
+
+```bash
+npm run tauri android build -- --debug --target x86_64 --apk
+```
+
+```bash
+npm run tauri android dev
+```
+
+> **Windows:** turn on **Developer Mode** (Settings → System → For developers). The Android build links the compiled Rust library into the Android project, and Windows only lets normal accounts create those links in Developer Mode.
+
+**Release builds are signed** with a key described in `src-tauri/gen/android/key.properties`, which is git-ignored and never committed:
+
+```properties
+storeFile=C:/path/to/your-release.jks
+keyAlias=your-key-alias
+password=your-keystore-password
+```
+
+Without that file, release APKs are built unsigned. Keep the keystore safe: Android only installs updates signed with the same key.
 
 > **Windows tip:** run Cargo from PowerShell or cmd, not Git Bash. Git Bash's `/usr/bin/link` shadows the MSVC linker and the build fails with `link: extra operand`.
 

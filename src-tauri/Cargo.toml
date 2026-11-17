@@ -1,6 +1,6 @@
 [package]
 name = "habit_levelling"
-version = "0.2.0"
+version = "0.3.0"
 description = "Habit Levelling - a local-first habit tracker"
 authors = ["you"]
 edition = "2021"
