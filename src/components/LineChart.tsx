@@ -144,8 +144,11 @@ export function LineChart({
         tabIndex={0}
         onKeyDown={onKey}
         onBlur={() => setHover(null)}
+        onPointerDown={(e) => setHover(indexAt(e.clientX))}
         onPointerMove={(e) => setHover(indexAt(e.clientX))}
-        onPointerLeave={() => setHover(null)}
+        // On touch, "leave" fires as the finger lifts; keep the readout until
+        // the next tap elsewhere (blur) instead.
+        onPointerLeave={(e) => e.pointerType !== "touch" && setHover(null)}
       >
         {/* Recessive hairline grid and y labels. */}
         {yTicks.map((t) => (

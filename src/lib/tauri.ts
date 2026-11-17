@@ -32,8 +32,8 @@ export const api = {
   undoToday: (id: number) => invoke<HabitSummary>("undo_habit_today", { id }),
   getStats: () => invoke<StatProgress[]>("get_stats"),
   getActivity: () => invoke<Activity>("get_activity"),
-  /** Saves a backup file and returns its path. */
-  exportBackup: () => invoke<string>("export_backup"),
+  /** Builds a backup; the page saves it via the system Save dialog. */
+  exportBackup: () => invoke<{ fileName: string; json: string }>("export_backup"),
   inspectBackup: (json: string) => invoke<BackupSummary>("inspect_backup", { json }),
   restoreBackup: (json: string) => invoke<RestoreResult>("restore_backup", { json }),
   getBackupInfo: () => invoke<BackupInfo>("get_backup_info"),

@@ -21,6 +21,10 @@ const LEGACY_IDENTIFIER: &str = "com.ben.habit_levelling";
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        // System "Save"/"Open" pickers for backups, and reading/writing the
+        // file the user picked (including Android content:// files).
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             // e.g. %APPDATA%\com.habitlevelling.app\habits.db on Windows
             let data_dir = app.path().app_data_dir()?;

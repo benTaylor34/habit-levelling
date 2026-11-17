@@ -159,7 +159,7 @@ export function Analysis() {
           <section className="panel">
             <div className="panel-header">
               <h2>{metric === "level" ? "Stat levels over time" : "Total XP over time"}</h2>
-              <span className="muted small">Click a stat to show or hide it</span>
+              <span className="muted small">Select a stat to show or hide it</span>
             </div>
             <div className="legend" onMouseLeave={() => setHighlight(null)}>
               {series.map((s) => {
@@ -205,6 +205,7 @@ export function Analysis() {
               <h2>Summary</h2>
               <span className="muted small">{rangeLabel}</span>
             </div>
+            <div className="table-scroll">
             <table className="data-table">
               <thead>
                 <tr>
@@ -240,6 +241,7 @@ export function Analysis() {
                 })}
               </tbody>
             </table>
+            </div>
           </section>
         </>
       )}

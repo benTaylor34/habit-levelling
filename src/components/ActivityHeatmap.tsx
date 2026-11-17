@@ -93,8 +93,9 @@ export function ActivityHeatmap({ activity, today }: { activity: Activity; today
             height={height}
             role="img"
             aria-label={`Activity over the last year: ${plural(activity.totalCompletions, "habit")} logged on ${plural(activity.activeDays, "day")}.`}
+            onPointerDown={onMove}
             onPointerMove={onMove}
-            onPointerLeave={() => setHover(null)}
+            onPointerLeave={(e) => e.pointerType !== "touch" && setHover(null)}
           >
             {months.map((m) => (
               <text key={m.col} className="hm-label" x={LEFT + m.col * STEP} y={11}>

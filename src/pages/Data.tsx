@@ -1,9 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { api, errorMessage } from "../lib/tauri";
 import type { BackupInfo, BackupSummary } from "../lib/types";
 import { parseIsoDate } from "../lib/dates";
 import { CheckIcon, DownloadIcon, FolderIcon, UploadIcon, WarningIcon } from "../components/Icons";
+
+/** Android has no file explorer to "show in folder", and picks files as content:// URIs. */
+const IS_ANDROID = /android/i.test(navigator.userAgent);
+const BACKUP_FILTER = [{ name: "Habit Levelling backup", extensions: ["json"] }];
 
 const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 
@@ -23,10 +29,22 @@ function describe(s: BackupSummary) {
   return `${plural(s.habits, "habit")} and ${plural(s.completions, "daily log")}${range}`;
 }
 
-/** Last part of a file path, on any OS. */
-const fileName = (path: string) => path.split(/[\\/]/).pop() ?? path;
+/** Readable name for a picked file: a normal path or an Android content:// URI. */
+function fileName(path: string) {
+  const last = path.split(/[\\/]/).pop() ?? path;
+  try {
+    // content://…/document/primary%3ADownload%2Fbackup.json -> backup.json
+    return decodeURIComponent(last).split(/[:/]/).pop() || last;
+  } catch {
+    return last;
+  }
+}
+
+/** Only real file paths on desktop can be shown in a folder. */
+const canReveal = (path: string) => !IS_ANDROID && !path.startsWith("content:");
 
 function RevealButton({ path, label = "Show in folder" }: { path: string; label?: string }) {
+  if (!canReveal(path)) return null;
   return (
     <button type="button" className="btn ghost small-btn" onClick={() => revealItemInDir(path)}>
       <FolderIcon size={15} /> {label}
@@ -36,25 +54,30 @@ function RevealButton({ path, label = "Show in folder" }: { path: string; label?
 
 export function Data() {
   const [info, setInfo] = useState<BackupInfo | null>(null);
-  const [exported, setExported] = useState<string | null>(null);
+  /** Where the backup went, plus the name we suggested (Android's content:// paths hide it). */
+  const [exported, setExported] = useState<{ path: string; name: string } | null>(null);
   const [pending, setPending] = useState<{ json: string; fileName: string; summary: BackupSummary } | null>(
     null,
   );
   const [restored, setRestored] = useState<{ summary: BackupSummary; safetyBackup: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
 
   const loadInfo = () => api.getBackupInfo().then(setInfo).catch((e) => setError(errorMessage(e)));
   useEffect(() => {
     loadInfo();
   }, []);
 
+  // Rust builds the backup; the system Save dialog decides where it goes.
   async function exportNow() {
     setBusy(true);
     setError(null);
     try {
-      setExported(await api.exportBackup());
+      const { fileName: suggested, json } = await api.exportBackup();
+      const path = await save({ defaultPath: suggested, filters: BACKUP_FILTER });
+      if (!path) return; // cancelled
+      await writeTextFile(path, json);
+      setExported({ path, name: suggested });
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -62,16 +85,18 @@ export function Data() {
     }
   }
 
-  // Read the chosen file and let Rust check it before anything is replaced.
-  async function chooseFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // allow choosing the same file again
-    if (!file) return;
+  // Pick a file and let Rust check it before anything is replaced.
+  async function chooseFile() {
     setError(null);
     setRestored(null);
     try {
-      const json = await file.text();
-      setPending({ json, fileName: file.name, summary: await api.inspectBackup(json) });
+      const path = await open({ multiple: false, directory: false, filters: BACKUP_FILTER });
+      if (!path) return; // cancelled
+      const json = await readTextFile(path);
+      // Android hands back content:// references (e.g. ".../document/14") with no
+      // usable file name, so those are just called "This backup".
+      const name = path.startsWith("content:") ? "" : fileName(path);
+      setPending({ json, fileName: name, summary: await api.inspectBackup(json) });
     } catch (err) {
       setPending(null);
       setError(errorMessage(err));
@@ -100,8 +125,8 @@ export function Data() {
           <p className="eyebrow">Data</p>
           <h1>Backup & restore</h1>
           <p className="muted description">
-            Your habits are stored only on this computer. Back them up to keep them safe or move
-            them to another PC.
+            Your habits are stored only on this device. Back them up to keep them safe or move them
+            to another device.
           </p>
         </div>
       </header>
@@ -120,19 +145,21 @@ export function Data() {
           <div className="data-body">
             <h2>Export a backup</h2>
             <p className="muted small">
-              Saves all your habits and daily logs as one file in your Downloads folder. Your XP,
+              Saves all your habits and daily logs as one file, wherever you choose. Your XP,
               levels and streaks are rebuilt from it.
             </p>
             <div className="data-actions">
               <button type="button" className="btn primary" disabled={busy} onClick={exportNow}>
-                <DownloadIcon size={16} /> Export backup
+                <DownloadIcon size={16} /> Export backup…
               </button>
             </div>
             {exported && (
               <div className="data-result success-result">
                 <CheckIcon size={15} strokeWidth={2.6} />
-                <span className="path">Saved to {exported}</span>
-                <RevealButton path={exported} />
+                <span className="path">
+                  Saved {canReveal(exported.path) ? `to ${exported.path}` : `as ${exported.name}`}
+                </span>
+                <RevealButton path={exported.path} />
               </div>
             )}
           </div>
@@ -148,21 +175,9 @@ export function Data() {
               Replaces everything in the app with a backup's contents. Your current data is saved
               first, so you can always undo it.
             </p>
-            <input
-              ref={fileInput}
-              type="file"
-              accept=".json,application/json"
-              hidden
-              onChange={chooseFile}
-            />
             {!pending && (
               <div className="data-actions">
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={busy}
-                  onClick={() => fileInput.current?.click()}
-                >
+                <button type="button" className="btn" disabled={busy} onClick={chooseFile}>
                   <UploadIcon size={16} /> Choose backup file…
                 </button>
               </div>
@@ -174,7 +189,7 @@ export function Data() {
                   <WarningIcon size={16} strokeWidth={2.4} /> Replace all current data?
                 </div>
                 <p className="small">
-                  <strong>{pending.fileName}</strong> was made on{" "}
+                  {pending.fileName ? <strong>{pending.fileName}</strong> : "This backup"} was made on{" "}
                   {formatExportedAt(pending.summary.exportedAt)} and holds {describe(pending.summary)}.
                 </p>
                 <div className="data-actions">
@@ -211,6 +226,8 @@ export function Data() {
               A backup is saved automatically the first time you open the app each day. The last{" "}
               {info?.autoBackupsKept ?? 14} are kept, along with the safety copies made before each
               restore.
+              {IS_ANDROID &&
+                " On Android these stay inside the app, so export a backup to keep a copy you can move."}
             </p>
             {info && (
               <dl className="data-facts">

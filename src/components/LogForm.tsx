@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, errorMessage } from "../lib/tauri";
+import { useBackHandler } from "../lib/back";
 import type { Completion, CompletionInput, HabitSummary, XpPreview } from "../lib/types";
 import { DIFFICULTY_LABELS, statInfo } from "../lib/types";
 import { formatMinutes } from "../lib/dates";
@@ -59,6 +60,7 @@ export function LogForm({ habit, initial, onSubmit, onCancel }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel]);
+  useBackHandler(onCancel); // Android Back closes the popup
 
   function switchMode(next: Mode) {
     setMode(next);

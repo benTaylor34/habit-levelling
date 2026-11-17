@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, errorMessage } from "./lib/tauri";
+import { useBackHandler } from "./lib/back";
 import type { IsoDate } from "./lib/types";
 import { Analysis } from "./pages/Analysis";
 import { Data } from "./pages/Data";
@@ -17,6 +18,9 @@ function App() {
   const [view, setView] = useState<View>({ page: "dashboard" });
   const [today, setToday] = useState<IsoDate | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Android Back: from any other page, go back to Today; on Today, exit.
+  useBackHandler(() => setView({ page: "dashboard" }), view.page !== "dashboard");
 
   // Ask Rust what "today" is; re-check when the window regains focus so
   // leaving the app open past midnight rolls over to the new day.
@@ -40,7 +44,7 @@ function App() {
               <path d="M4 18 10 12l4 4 6-8" />
             </svg>
           </span>
-          Habit Levelling
+          <span className="brand-text">Habit Levelling</span>
         </button>
         <div className="nav-tabs">
           <button

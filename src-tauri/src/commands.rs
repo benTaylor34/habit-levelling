@@ -129,19 +129,24 @@ fn app_data_dir(app: &AppHandle) -> AppResult<PathBuf> {
         .map_err(|e| AppError::Invalid(format!("Couldn't find the app data folder: {e}")))
 }
 
-/// Save a backup of everything to the Downloads folder (or Documents, or the
-/// app's own folder if neither exists). Returns the saved file's path.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportedBackup {
+    /// Suggested file name, e.g. "habit-levelling-backup-2026-11-16.json".
+    pub file_name: String,
+    /// The backup itself, for the page to save wherever the user picks.
+    pub json: String,
+}
+
+/// Build a backup of everything. The page saves it through the system "Save"
+/// dialog, which works the same on desktop and Android.
 #[tauri::command]
-pub async fn export_backup(app: AppHandle, pool: State<'_, SqlitePool>) -> AppResult<String> {
-    let dir = app
-        .path()
-        .download_dir()
-        .or_else(|_| app.path().document_dir())
-        .or_else(|_| app_data_dir(&app).map_err(|_| tauri::Error::UnknownPath))
-        .map_err(|e| AppError::Invalid(format!("Couldn't find a folder to save to: {e}")))?;
+pub async fn export_backup(pool: State<'_, SqlitePool>) -> AppResult<ExportedBackup> {
     let data = backup::export(&pool).await?;
-    let stem = format!("habit-levelling-backup-{}", today().format("%Y-%m-%d"));
-    Ok(backup::write(&data, &dir, &stem)?.display().to_string())
+    Ok(ExportedBackup {
+        file_name: format!("habit-levelling-backup-{}.json", today().format("%Y-%m-%d")),
+        json: data.to_json(),
+    })
 }
 
 /// Check a backup file's contents and say what's in it, without restoring.

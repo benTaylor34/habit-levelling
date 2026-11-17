@@ -75,6 +75,8 @@ export function RadarChart({ stats }: { stats: StatProgress[] }) {
               key={r.info.key}
               className={`radar-vertex stat-${r.info.key} ${hover === i ? "is-hover" : ""}`}
               onMouseEnter={() => setHover(i)}
+              // Touch screens have no hover: a tap selects the point instead.
+              onPointerDown={() => setHover(i)}
             >
               <circle className="radar-dot" cx={x} cy={y} r={4.5} />
               <text className="radar-label" x={lx} y={ly - 2} textAnchor={anchor}>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/tauri";
+import { useBackHandler } from "../lib/back";
 import type { Habit, HabitInput, StatKey, StatRecommendation } from "../lib/types";
 import { statInfo } from "../lib/types";
 import { SparkleIcon } from "./Icons";
@@ -74,8 +75,9 @@ export function HabitForm({ initial, onSubmit, onCancel }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel]);
+  useBackHandler(onCancel); // Android Back closes the form
 
-  const suggested = suggestion?.primary ? suggestion : null;
+  const suggested =suggestion?.primary ? suggestion : null;
   const usingSuggestion =
     suggested !== null && primary === suggested.primary && secondary === suggested.secondary;
 
