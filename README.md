@@ -9,9 +9,10 @@ Habit Levelling is a local-first desktop app built with **Rust + Tauri**, **SQLi
 ## Features
 
 - **Daily habits.** Tick a habit off for today, log how long you spent and how hard it felt, and undo it if you mis-click.
+- **Quick time logging.** Build up the time with +5, +10 and +30 minute buttons, or tap the total to type an exact time. Did a second session later? Add its time to today's log.
 - **Six stats.** Each habit trains a primary stat (full XP) and optionally a secondary stat (half XP): Strength, Dexterity, Constitution, Intelligence, Wisdom and Charisma.
 - **Smart stat suggestions.** Type a habit like "Study maths" or "Weightlifting" and the app suggests stats for it (Intelligence + Wisdom, Strength + Constitution).
-- **Levelling that gets harder.** Low levels come quickly; high levels take real commitment, using Pokémon's "medium fast" XP curve.
+- **Levelling that gets harder.** Your first completion levels a stat up straight away, each level after costs a little more, and level 100 takes about a year of serious daily work.
 - **Streaks everywhere.** Each habit and each stat has a current and longest streak, and longer streaks earn more XP.
 - **Use it or lose it.** Stats you stop training slowly lose XP, then levels. Habits you haven't done for a week get a warning.
 - **A secret stat.** Luck can't be trained. It may appear when a streak hits a milestone…
@@ -39,6 +40,12 @@ Each day you log a habit, its stats earn:
 - **Primary and secondary stats:** the primary stat gets the full amount and the secondary stat gets half.
 
 For example, 30 minutes of Hard studying on day 7 of a streak gives **(10 + 30) × 2 × 1.3 = 104 Intelligence** and **52 Wisdom**.
+
+### Logging time
+
+Each habit has one log per day. When you tick a habit off, choose how long you spent with the **+5 min**, **+10 min** and **+30 min** buttons, or tap the total to type an exact number of minutes (up to 24 hours), then pick how hard it was.
+
+If you come back to a habit later the same day, press **+ Time** on its card and choose **Add time** to add the new session to today's total, or **Edit total** to correct it. XP is worked out from the day's total, so splitting a session into several logs never earns extra.
 
 ### Levels
 
