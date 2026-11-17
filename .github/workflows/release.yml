@@ -1,0 +1,130 @@
+# Builds every platform from the same tagged commit and attaches the files to a
+# DRAFT GitHub release. Review the draft, write the notes, then publish it.
+#
+#   git tag v0.4.0 && git push origin v0.4.0
+#
+# Android signing uses these repository secrets (Settings > Secrets and
+# variables > Actions). Without them the APK is built unsigned.
+#   ANDROID_KEYSTORE_BASE64  the .jks keystore, base64-encoded
+#   ANDROID_KEY_ALIAS        the key alias inside it
+#   ANDROID_KEY_PASSWORD     the keystore/key password
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.ref_name }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  draft:
+    name: Create draft release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create the draft (if it doesn't exist yet)
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; builds will be added to it."
+          else
+            gh release create "$TAG" --draft --verify-tag --title "Habit Levelling $TAG" \
+              --notes "Draft: built automatically from $TAG. Write the release notes, then publish."
+          fi
+
+  windows:
+    name: Windows exe
+    needs: draft
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust (stable)
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Install npm packages
+        run: npm ci
+
+      - name: Build the portable exe
+        run: npm run tauri build -- --no-bundle
+
+      - name: Attach to the release
+        shell: bash
+        run: gh release upload "$TAG" target/release/habit_levelling.exe --clobber
+
+  android:
+    name: Android APK
+    needs: draft
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: 27.2.12479018
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install the Android NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Install Rust (stable) with Android targets
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+
+      - name: Install npm packages
+        run: npm ci
+
+      - name: Set up release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::No signing secrets set; the APK will be unsigned."
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          {
+            echo "storeFile=$RUNNER_TEMP/release.jks"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "password=$KEY_PASSWORD"
+          } > src-tauri/gen/android/key.properties
+
+      - name: Build the APK (phones, older phones, emulators)
+        run: npm run tauri android build -- --apk --target aarch64 --target armv7 --target x86_64
+
+      - name: Attach to the release
+        run: |
+          dir=src-tauri/gen/android/app/build/outputs/apk/universal/release
+          if [ -f "$dir/app-universal-release.apk" ]; then
+            cp "$dir/app-universal-release.apk" habit-levelling.apk
+          else
+            cp "$dir/app-universal-release-unsigned.apk" habit-levelling-unsigned.apk
+          fi
+          gh release upload "$TAG" habit-levelling*.apk --clobber
+
+      - name: Remove signing files
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks" src-tauri/gen/android/key.properties

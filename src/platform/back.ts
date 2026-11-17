@@ -1,4 +1,4 @@
-// Android's Back button. MainActivity.kt calls `window.__habitBack()` when
+// Android's Back button (platform edge). MainActivity.kt calls `window.__habitBack()` when
 // Back is pressed: the most recently registered handler runs (close the open
 // popup, leave the current page) and Android exits only if there is none.
 import { useEffect, useRef } from "react";

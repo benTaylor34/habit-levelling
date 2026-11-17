@@ -1615,10 +1615,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "habit_core"
+version = "0.3.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "sqlx",
+]
+
+[[package]]
 name = "habit_levelling"
 version = "0.3.0"
 dependencies = [
  "chrono",
+ "habit_core",
  "serde",
  "serde_json",
  "sqlx",

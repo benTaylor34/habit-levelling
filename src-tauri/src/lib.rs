@@ -1,16 +1,8 @@
-mod activity;
 mod backup;
 mod commands;
 mod db;
-mod decay;
 mod error;
 mod habits;
-mod history;
-mod luck;
-mod models;
-mod recommend;
-mod stats;
-mod streaks;
 
 use tauri::Manager;
 

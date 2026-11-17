@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
 use crate::error::{AppError, AppResult};
-use crate::stats::{self, Stat};
+use habit_core::stats::{self, Stat};
 
 /// Identifies our files, so restoring some other JSON file fails clearly.
 pub const APP_TAG: &str = "habit-levelling";
@@ -335,8 +335,8 @@ mod tests {
     use super::*;
     use crate::db;
     use crate::habits::{self, complete_with_roll, create, summary};
-    use crate::models::{CompletionInput, HabitInput};
-    use crate::stats::Stat::*;
+    use habit_core::models::{CompletionInput, HabitInput};
+    use habit_core::stats::Stat::*;
 
     fn d(s: &str) -> NaiveDate {
         NaiveDate::parse_from_str(s, DATE_FORMAT).unwrap()

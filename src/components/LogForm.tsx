@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, errorMessage } from "../lib/tauri";
-import { useBackHandler } from "../lib/back";
+import { useBackHandler } from "../platform";
 import type { Completion, CompletionInput, HabitSummary, XpPreview } from "../lib/types";
 import { DIFFICULTY_LABELS, statInfo } from "../lib/types";
 import { formatMinutes } from "../lib/dates";

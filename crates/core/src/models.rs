@@ -8,7 +8,8 @@ use crate::decay::DecayPhase;
 use crate::stats::Stat;
 
 /// A row of the `habits` table.
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 #[serde(rename_all = "camelCase")]
 pub struct Habit {
     pub id: i64,

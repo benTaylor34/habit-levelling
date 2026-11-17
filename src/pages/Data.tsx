@@ -1,14 +1,10 @@
 import { useEffect, useState } from "react";
-import { open, save } from "@tauri-apps/plugin-dialog";
-import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { api, errorMessage } from "../lib/tauri";
 import type { BackupInfo, BackupSummary } from "../lib/types";
 import { parseIsoDate } from "../lib/dates";
+import { canReveal, displayName, isAndroid, openTextFile, revealInFolder, saveTextFile } from "../platform";
 import { CheckIcon, DownloadIcon, FolderIcon, UploadIcon, WarningIcon } from "../components/Icons";
 
-/** Android has no file explorer to "show in folder", and picks files as content:// URIs. */
-const IS_ANDROID = /android/i.test(navigator.userAgent);
 const BACKUP_FILTER = [{ name: "Habit Levelling backup", extensions: ["json"] }];
 
 const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
@@ -29,24 +25,10 @@ function describe(s: BackupSummary) {
   return `${plural(s.habits, "habit")} and ${plural(s.completions, "daily log")}${range}`;
 }
 
-/** Readable name for a picked file: a normal path or an Android content:// URI. */
-function fileName(path: string) {
-  const last = path.split(/[\\/]/).pop() ?? path;
-  try {
-    // content://…/document/primary%3ADownload%2Fbackup.json -> backup.json
-    return decodeURIComponent(last).split(/[:/]/).pop() || last;
-  } catch {
-    return last;
-  }
-}
-
-/** Only real file paths on desktop can be shown in a folder. */
-const canReveal = (path: string) => !IS_ANDROID && !path.startsWith("content:");
-
 function RevealButton({ path, label = "Show in folder" }: { path: string; label?: string }) {
   if (!canReveal(path)) return null;
   return (
-    <button type="button" className="btn ghost small-btn" onClick={() => revealItemInDir(path)}>
+    <button type="button" className="btn ghost small-btn" onClick={() => revealInFolder(path)}>
       <FolderIcon size={15} /> {label}
     </button>
   );
@@ -74,9 +56,8 @@ export function Data() {
     setError(null);
     try {
       const { fileName: suggested, json } = await api.exportBackup();
-      const path = await save({ defaultPath: suggested, filters: BACKUP_FILTER });
+      const path = await saveTextFile(suggested, json, BACKUP_FILTER);
       if (!path) return; // cancelled
-      await writeTextFile(path, json);
       setExported({ path, name: suggested });
     } catch (e) {
       setError(errorMessage(e));
@@ -90,13 +71,10 @@ export function Data() {
     setError(null);
     setRestored(null);
     try {
-      const path = await open({ multiple: false, directory: false, filters: BACKUP_FILTER });
-      if (!path) return; // cancelled
-      const json = await readTextFile(path);
-      // Android hands back content:// references (e.g. ".../document/14") with no
-      // usable file name, so those are just called "This backup".
-      const name = path.startsWith("content:") ? "" : fileName(path);
-      setPending({ json, fileName: name, summary: await api.inspectBackup(json) });
+      const file = await openTextFile(BACKUP_FILTER);
+      if (!file) return; // cancelled
+      // Android doesn't reveal the file's name; it's then just "This backup".
+      setPending({ json: file.text, fileName: file.name ?? "", summary: await api.inspectBackup(file.text) });
     } catch (err) {
       setPending(null);
       setError(errorMessage(err));
@@ -226,14 +204,14 @@ export function Data() {
               A backup is saved automatically the first time you open the app each day. The last{" "}
               {info?.autoBackupsKept ?? 14} are kept, along with the safety copies made before each
               restore.
-              {IS_ANDROID &&
+              {isAndroid &&
                 " On Android these stay inside the app, so export a backup to keep a copy you can move."}
             </p>
             {info && (
               <dl className="data-facts">
                 <div>
                   <dt>Latest</dt>
-                  <dd>{info.latestAuto ? fileName(info.latestAuto) : "None yet (made once you have a habit)"}</dd>
+                  <dd>{info.latestAuto ? (displayName(info.latestAuto) ?? info.latestAuto) : "None yet (made once you have a habit)"}</dd>
                 </div>
                 <div>
                   <dt>Kept</dt>

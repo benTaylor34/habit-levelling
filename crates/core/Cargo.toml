@@ -1,0 +1,16 @@
+[package]
+name = "habit_core"
+description = "Habit Levelling's game rules: stats, XP, levels, streaks, decay, luck and history"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+# Derives sqlx traits on the data types (Stat as a TEXT column, Habit as a
+# row) for apps that store them in SQLite. The rules themselves never need it.
+sqlx = ["dep:sqlx"]
+
+[dependencies]
+serde = { workspace = true }
+chrono = { workspace = true }
+sqlx = { workspace = true, optional = true }

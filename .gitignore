@@ -25,3 +25,6 @@ dist-ssr
 
 src-tauri/.env
 graphify-out/
+
+# Rust build output (Cargo workspace)
+/target/

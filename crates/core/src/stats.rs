@@ -8,9 +8,10 @@ use crate::models::StatProgress;
 
 /// The six trainable stats, plus the secret Luck stat which no habit can
 /// train directly (see `luck.rs`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
 #[serde(rename_all = "lowercase")]
-#[sqlx(type_name = "TEXT", rename_all = "lowercase")]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "TEXT", rename_all = "lowercase"))]
 pub enum Stat {
     Strength,
     Dexterity,

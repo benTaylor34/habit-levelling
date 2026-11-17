@@ -1,0 +1,55 @@
+# Checks every push and pull request: the Rust tests for the whole workspace
+# (game rules in crates/core plus the app) and the TypeScript type-check.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Windows has everything Tauri needs to compile out of the box.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust (stable)
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-test-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-test-${{ runner.os }}-
+
+      - name: Install npm packages
+        run: npm ci
+
+      - name: Type-check the frontend
+        run: npx tsc --noEmit
+
+      # tauri::generate_context! embeds the built frontend, so build it first.
+      - name: Build the frontend
+        run: npm run build
+
+      - name: Test the game rules on their own (no database, no Tauri)
+        run: cargo test -p habit_core
+
+      - name: Test the whole workspace
+        run: cargo test --workspace

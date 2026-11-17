@@ -8,15 +8,15 @@ use std::path::PathBuf;
 use tauri::{AppHandle, Manager, State};
 
 use crate::error::AppResult;
-use crate::models::{
+use habit_core::models::{
     CompletionInput, Habit, HabitDetails, HabitInput, HabitSummary, LogResult, StatHistory,
     StatProgress, XpPreview,
 };
-use crate::activity::Activity;
+use habit_core::activity::Activity;
 use crate::backup::{self, BackupSummary};
 use crate::error::AppError;
 use crate::habits;
-use crate::recommend::{self, StatRecommendation};
+use habit_core::recommend::{self, StatRecommendation};
 
 /// "Today" is the user's *local* calendar date, not a UTC timestamp.
 fn today() -> NaiveDate {

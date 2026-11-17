@@ -7,15 +7,15 @@ use chrono::NaiveDate;
 use sqlx::SqlitePool;
 
 use crate::error::{AppError, AppResult};
-use crate::models::{
+use habit_core::models::{
     Completion, CompletionInput, Habit, HabitDetails, HabitInput, HabitSummary, LuckWin,
     StatHistory, StatProgress, XpPreview,
 };
-use crate::activity::{self, Activity};
-use crate::decay;
-use crate::history::{self, StatGain};
-use crate::stats::{self, Stat};
-use crate::{luck, streaks};
+use habit_core::activity::{self, Activity};
+use habit_core::decay;
+use habit_core::history::{self, StatGain};
+use habit_core::stats::{self, Stat};
+use habit_core::{luck, streaks};
 
 const DATE_FORMAT: &str = "%Y-%m-%d";
 const HABIT_COLUMNS: &str =
@@ -373,8 +373,8 @@ pub async fn stat_progress(pool: &SqlitePool, today: NaiveDate) -> AppResult<Vec
 mod tests {
     use super::*;
     use crate::db;
-    use crate::decay::DecayPhase;
-    use crate::stats::Stat::*;
+    use habit_core::decay::DecayPhase;
+    use habit_core::stats::Stat::*;
 
     fn d(s: &str) -> NaiveDate {
         NaiveDate::parse_from_str(s, DATE_FORMAT).unwrap()

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/tauri";
-import { useBackHandler } from "../lib/back";
+import { useBackHandler } from "../platform";
 import type { Habit, HabitInput, StatKey, StatRecommendation } from "../lib/types";
 import { statInfo } from "../lib/types";
 import { SparkleIcon } from "./Icons";

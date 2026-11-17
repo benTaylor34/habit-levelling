@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, errorMessage } from "./lib/tauri";
-import { useBackHandler } from "./lib/back";
+import { useBackHandler } from "./platform";
 import type { IsoDate } from "./lib/types";
 import { Analysis } from "./pages/Analysis";
 import { Data } from "./pages/Data";

@@ -113,19 +113,22 @@ npm install
 npm run tauri dev
 ```
 
-**Build a standalone `.exe`** (output: `src-tauri/target/release/habit_levelling.exe`):
+**Build a standalone `.exe`** (output: `target/release/habit_levelling.exe`):
 
 ```bash
 npm run tauri build -- --no-bundle
 ```
 
-Leave out `--no-bundle` to also build `.msi` and setup `.exe` installers under `src-tauri/target/release/bundle/`.
+Leave out `--no-bundle` to also build `.msi` and setup `.exe` installers under `target/release/bundle/`.
 
-**Run the tests:**
+**Run the tests** from the repo root. The game rules can be tested on their own, with no database or Tauri:
 
 ```bash
-cd src-tauri
-cargo test
+cargo test -p habit_core
+```
+
+```bash
+cargo test --workspace
 ```
 
 ### Android
@@ -160,15 +163,41 @@ Without that file, release APKs are built unsigned. Keep the keystore safe: Andr
 
 > **Windows tip:** run Cargo from PowerShell or cmd, not Git Bash. Git Bash's `/usr/bin/link` shadows the MSVC linker and the build fails with `link: extra operand`.
 
+### Releases (GitHub Actions)
+
+Pushing a version tag builds every platform from that same commit:
+
+```bash
+git tag v0.4.0
+```
+
+```bash
+git push origin v0.4.0
+```
+
+The **Release** workflow creates a **draft** GitHub release and attaches the Windows exe and the Android APK. Review it, write the notes and publish. The **CI** workflow runs the tests and type-check on every push and pull request.
+
+To sign the APK in CI, add three repository secrets (Settings → Secrets and variables → Actions): `ANDROID_KEYSTORE_BASE64` (the keystore file, base64-encoded), `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Without them the APK is built unsigned.
+
 ## Architecture
 
-All the rules live in Rust; React only displays data and calls Tauri commands.
+One repo, organised so shared code sits in the middle and platform-specific code stays at the edges.
+
+```text
+crates/core/     habit_core: the game rules. Pure Rust, no database, UI or platform code.
+src-tauri/       The Tauri app: SQLite storage, backups and the commands the UI calls.
+  gen/android/   The Android shell (MainActivity.kt: status bar, keyboard, Back button).
+src/             The React UI, shared by desktop and Android.
+  platform/      Everything that differs by platform: file pickers, dialogs, Android Back.
+```
 
 ```text
 React UI (src/)  ──invoke──▶  Tauri commands (commands.rs)  ──▶  habits.rs  ──▶  SQLite (SQLx)
-                                                                  │
-                                         pure logic: streaks · stats · decay · luck · history · activity · recommend
+                                                                    │
+                          habit_core: stats · streaks · decay · luck · history · activity · recommend
 ```
+
+All the rules live in Rust; React only displays data and calls Tauri commands. A future web or server version would build on `habit_core` in the same way.
 
 Two design rules keep the data trustworthy:
 
@@ -177,21 +206,24 @@ Two design rules keep the data trustworthy:
 
 | Path | What it does |
 | --- | --- |
+| `crates/core/src/stats.rs` | Stats, XP per completion, level curve |
+| `crates/core/src/streaks.rs` | Current, longest and per-day streaks |
+| `crates/core/src/decay.rs` | Idle stats fading, replayed day by day |
+| `crates/core/src/luck.rs` | Streak milestones and Luck rolls |
+| `crates/core/src/history.rs` | Day-by-day stat XP and levels for the Analysis page |
+| `crates/core/src/activity.rs` | A year of daily activity for the heatmap |
+| `crates/core/src/recommend.rs` | Keyword-based stat suggestions |
+| `crates/core/src/models.rs` | Shared data types, serialised for the UI |
 | `src-tauri/src/commands.rs` | Tauri commands: the frontend's only API. Decides what "today" is. |
-| `src-tauri/src/habits.rs` | Habit CRUD, completions, summaries and stat queries |
-| `src-tauri/src/stats.rs` | Stats, XP per completion, level curve |
-| `src-tauri/src/streaks.rs` | Current, longest and per-day streaks |
-| `src-tauri/src/decay.rs` | Idle stats fading, replayed day by day |
-| `src-tauri/src/luck.rs` | Streak milestones and Luck rolls |
-| `src-tauri/src/history.rs` | Day-by-day stat XP and levels for the Analysis page |
-| `src-tauri/src/activity.rs` | A year of daily activity for the heatmap |
-| `src-tauri/src/recommend.rs` | Keyword-based stat suggestions |
+| `src-tauri/src/habits.rs` | Habit CRUD, completions, summaries and stat queries (SQLite) |
 | `src-tauri/src/backup.rs` | JSON export, checked all-or-nothing restore, daily automatic backups |
 | `src-tauri/src/db.rs` | SQLite connection and embedded migrations |
 | `src-tauri/migrations/` | Database schema |
 | `src/pages/` | Today (dashboard), habit details, Analysis and Data pages |
 | `src/components/` | Habit cards, forms, stat panel, charts and heatmap |
+| `src/platform/` | Platform edge: file pickers, native dialogs, Android Back button |
 | `src/lib/` | Typed command wrappers, shared types and date helpers |
+| `.github/workflows/` | CI (tests on every push) and Release (builds on version tags) |
 
 ## Licence
 

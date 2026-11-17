@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { ask } from "@tauri-apps/plugin-dialog";
 import { api, errorMessage } from "../lib/tauri";
+import { confirm } from "../platform";
 import type { CompletionInput, HabitDetails as Details, IsoDate, LuckWin } from "../lib/types";
 import { difficultyLabel, statInfo } from "../lib/types";
 import { formatMinutes, parseIsoDate } from "../lib/dates";
@@ -84,9 +84,9 @@ export function HabitDetails({ id, today, onBack }: Props) {
   }
 
   async function remove() {
-    const ok = await ask(
+    const ok = await confirm(
       `Delete "${summary.name}" and its entire completion history? This can't be undone.`,
-      { title: "Delete habit", kind: "warning", okLabel: "Delete", cancelLabel: "Cancel" },
+      { title: "Delete habit", okLabel: "Delete", warning: true },
     );
     if (!ok) return;
     try {
