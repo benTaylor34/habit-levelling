@@ -6,12 +6,14 @@ import { ChevronLeftIcon, ChevronRightIcon } from "./Icons";
 interface Props {
   completions: IsoDate[];
   today: IsoDate;
+  /** Called with a day up to today when it's clicked, to log or edit it. */
+  onSelect?: (date: IsoDate) => void;
 }
 
 const WEEKDAYS = ["M", "T", "W", "T", "F", "S", "S"];
 
 /** Month grid (Monday first) with completed days highlighted. */
-export function Calendar({ completions, today }: Props) {
+export function Calendar({ completions, today, onSelect }: Props) {
   const todayDate = parseIsoDate(today);
   const [month, setMonth] = useState(
     new Date(todayDate.getFullYear(), todayDate.getMonth(), 1),
@@ -39,6 +41,7 @@ export function Calendar({ completions, today }: Props) {
           <h2>{month.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</h2>
           <div className="muted small">
             {completedThisMonth} {completedThisMonth === 1 ? "day" : "days"} completed
+            {onSelect && " · pick a day to log or edit it"}
           </div>
         </div>
         <div className="calendar-nav">
@@ -72,6 +75,21 @@ export function Calendar({ completions, today }: Props) {
           if (done.has(iso)) classes.push("completed");
           if (iso === today) classes.push("today");
           if (iso > today) classes.push("future");
+          if (onSelect && iso <= today) {
+            const label = date.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+            return (
+              <button
+                key={i}
+                type="button"
+                className={classes.join(" ")}
+                aria-label={`${label}${done.has(iso) ? ", done" : ""}`}
+                title={`${done.has(iso) ? "Edit" : "Log"} ${label}`}
+                onClick={() => onSelect(iso)}
+              >
+                {date.getDate()}
+              </button>
+            );
+          }
           return (
             <div key={i} className={classes.join(" ")} title={iso}>
               {date.getDate()}

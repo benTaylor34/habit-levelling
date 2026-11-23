@@ -39,10 +39,15 @@ export function HabitCard({ habit, busy, onToggle, onAddTime, onOpen }: Props) {
       <button className="habit-body" onClick={() => onOpen(habit.id)}>
         <span className="habit-name">
           {habit.name}
-          {habit.needsAttention && (
+          <span className="habit-level" title={`Habit level ${habit.level}`}>
+            Lv {habit.level}
+          </span>
+          {habit.decay !== "none" && (
             <span
               className="idle-warning"
-              title={`Not done in ${habit.idleDays} days. Its stats fade unless another habit trains them.`}
+              title={`Not done in ${habit.idleDays} days. Its level is fading${
+                habit.decay === "level" ? " and can drop" : ""
+              } until you do it again.`}
             >
               <WarningIcon size={13} strokeWidth={2.4} />
               {habit.idleDays}d

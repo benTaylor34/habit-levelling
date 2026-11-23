@@ -38,6 +38,8 @@ impl Stat {
 pub const BASE_XP: u32 = 10;
 /// Longest time a single day's log may record.
 pub const MAX_MINUTES: u32 = 24 * 60;
+/// Shortest log that earns XP. Shorter logs still keep the streak going.
+pub const MIN_XP_MINUTES: u32 = 10;
 pub const MIN_DIFFICULTY: u32 = 1;
 pub const MAX_DIFFICULTY: u32 = 5;
 /// Like Pokémon, levels stop at 100.
@@ -75,7 +77,12 @@ pub fn streak_percent(streak: u32) -> u32 {
 ///
 /// `streak` is the habit's streak on the day of the completion (1 = first day).
 /// e.g. 30 minutes, Hard (×2), day 7 of a streak (×1.3) = 40 × 2 × 1.3 = 104 XP.
+///
+/// Logs shorter than `MIN_XP_MINUTES` earn no XP, but still count for the streak.
 pub fn completion_xp(minutes: u32, difficulty: u32, streak: u32) -> u32 {
+    if minutes < MIN_XP_MINUTES {
+        return 0;
+    }
     let base = BASE_XP + minutes.min(MAX_MINUTES);
     base * difficulty_percent(difficulty) * streak_percent(streak) / 10_000
 }
@@ -185,7 +192,7 @@ mod tests {
 
     #[test]
     fn more_time_and_difficulty_give_more_xp() {
-        assert_eq!(completion_xp(0, 1, 1), 10);
+        assert_eq!(completion_xp(10, 1, 1), 20);
         assert_eq!(completion_xp(30, 1, 1), 40);
         let by_difficulty: Vec<u32> = (1..=5).map(|d| completion_xp(30, d, 1)).collect();
         assert_eq!(by_difficulty, vec![40, 60, 80, 100, 120]);
@@ -193,9 +200,16 @@ mod tests {
     }
 
     #[test]
-    fn any_first_completion_reaches_level_2() {
-        let smallest = completion_xp(0, MIN_DIFFICULTY, 1);
+    fn any_first_completion_with_xp_reaches_level_2() {
+        let smallest = completion_xp(MIN_XP_MINUTES, MIN_DIFFICULTY, 1);
         assert_eq!(progress(Stat::Strength, smallest).level, 2);
+    }
+
+    #[test]
+    fn under_ten_minutes_earns_no_xp_even_with_bonuses() {
+        assert_eq!(completion_xp(0, MAX_DIFFICULTY, 365), 0);
+        assert_eq!(completion_xp(MIN_XP_MINUTES - 1, MAX_DIFFICULTY, 365), 0);
+        assert!(completion_xp(MIN_XP_MINUTES, MIN_DIFFICULTY, 1) > 0);
     }
 
     #[test]

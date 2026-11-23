@@ -69,10 +69,12 @@ pub struct HabitSummary {
     pub total_completions: u32,
     pub total_minutes: u32,
     pub total_xp: u32,
+    /// The habit's own level, from time spent, after any fading (see `habit_levels`).
+    pub level: u32,
+    /// Whether the habit's level is fading because it hasn't been done lately.
+    pub decay: DecayPhase,
     /// Days since the habit was last done (or created, if never done).
     pub idle_days: u32,
-    /// Not done for a week or more: its stats are decaying.
-    pub needs_attention: bool,
     /// Today's log, if the habit has been completed today.
     pub today_log: Option<Completion>,
     /// Completion flags for the last 7 days, oldest first (last = today).

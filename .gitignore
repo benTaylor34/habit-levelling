@@ -28,3 +28,6 @@ graphify-out/
 
 # Rust build output (Cargo workspace)
 /target/
+
+# Personal Claude Code settings (machine-specific paths, e.g. the graphify hook)
+.claude/settings.local.json

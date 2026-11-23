@@ -30,7 +30,8 @@ interface Props {
 export function HabitDetails({ id, today, onBack }: Props) {
   const [details, setDetails] = useState<Details | null>(null);
   const [editing, setEditing] = useState(false);
-  const [logging, setLogging] = useState(false);
+  /** The day whose log is open: today, or an earlier day picked on the calendar. */
+  const [logDay, setLogDay] = useState<IsoDate | null>(null);
   const [luck, setLuck] = useState<LuckWin | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,10 +67,23 @@ export function HabitDetails({ id, today, onBack }: Props) {
 
   async function logToday(log: CompletionInput) {
     const result = await api.completeToday(id, log);
-    setLogging(false);
+    setLogDay(null);
     setLuck(result.luck);
     await load();
   }
+
+  // Earlier days: fill in a forgotten day, correct it, or remove it.
+  async function logPastDay(date: IsoDate, log: CompletionInput) {
+    setDetails(await api.logDay(id, date, log));
+    setLogDay(null);
+  }
+
+  async function removePastDay(date: IsoDate) {
+    setDetails(await api.undoDay(id, date));
+    setLogDay(null);
+  }
+
+  const pastLog = logDay && logDay !== today ? completions.find((c) => c.date === logDay) ?? null : null;
 
   async function undo() {
     setBusy(true);
@@ -113,15 +127,20 @@ export function HabitDetails({ id, today, onBack }: Props) {
               )}
             </p>
           )}
-          <h1>{summary.name}</h1>
+          <h1>
+            {summary.name}
+            <span className="habit-level large" title="Grows with time spent on this habit">
+              Lv {summary.level}
+            </span>
+          </h1>
           {summary.description && <p className="muted description">{summary.description}</p>}
-          {summary.needsAttention && (
+          {summary.decay !== "none" && (
             <p className="idle-banner">
               <WarningIcon size={14} strokeWidth={2.4} />
-              {summary.totalCompletions === 0
-                ? `Not started in ${summary.idleDays} days.`
-                : `Not done in ${summary.idleDays} days.`}{" "}
-              {summary.primaryStat && "Its stats fade after a week unless another habit trains them."}
+              Not done in {summary.idleDays} days.{" "}
+              {summary.decay === "level"
+                ? "Its level is dropping until you do it again."
+                : "Its level XP is fading; after 3 weeks it starts losing levels."}
             </p>
           )}
         </div>
@@ -155,7 +174,7 @@ export function HabitDetails({ id, today, onBack }: Props) {
               </button>
               <button
                 className="btn success"
-                onClick={() => setLogging(true)}
+                onClick={() => setLogDay(today)}
                 title="Edit today's log"
               >
                 <CheckIcon size={16} strokeWidth={2.5} />
@@ -163,7 +182,7 @@ export function HabitDetails({ id, today, onBack }: Props) {
               </button>
             </>
           ) : (
-            <button className="btn primary" onClick={() => setLogging(true)}>
+            <button className="btn primary" onClick={() => setLogDay(today)}>
               <CheckIcon size={16} strokeWidth={2.5} />
               Complete today
             </button>
@@ -208,7 +227,7 @@ export function HabitDetails({ id, today, onBack }: Props) {
 
       <div className="details-grid">
         <section className="panel">
-          <Calendar completions={completions.map((c) => c.date)} today={today} />
+          <Calendar completions={completions.map((c) => c.date)} today={today} onSelect={setLogDay} />
         </section>
         <section className="panel">
           <div className="panel-header">
@@ -247,12 +266,23 @@ export function HabitDetails({ id, today, onBack }: Props) {
         </section>
       </div>
 
-      {logging && (
+      {logDay === today && (
         <LogForm
           habit={summary}
           initial={summary.todayLog}
-          onCancel={() => setLogging(false)}
+          onCancel={() => setLogDay(null)}
           onSubmit={logToday}
+        />
+      )}
+      {logDay && logDay !== today && (
+        <LogForm
+          key={logDay}
+          habit={summary}
+          date={logDay}
+          initial={pastLog}
+          onCancel={() => setLogDay(null)}
+          onSubmit={(log) => logPastDay(logDay, log)}
+          onRemove={() => removePastDay(logDay)}
         />
       )}
 

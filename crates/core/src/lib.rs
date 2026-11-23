@@ -6,6 +6,7 @@
 //! share exactly the same behaviour.
 //!
 //! - [`stats`]: the six stats (plus Luck), XP per completion and levels.
+//! - [`habit_levels`]: each habit's own level, from time spent only.
 //! - [`streaks`]: current, longest and per-day streaks.
 //! - [`decay`]: idle stats losing XP, then levels.
 //! - [`luck`]: the secret Luck stat's streak-milestone rolls.
@@ -16,9 +17,11 @@
 
 pub mod activity;
 pub mod decay;
+pub mod habit_levels;
 pub mod history;
 pub mod luck;
 pub mod models;
+pub mod quests;
 pub mod recommend;
 pub mod stats;
 pub mod streaks;

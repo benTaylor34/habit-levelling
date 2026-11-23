@@ -52,6 +52,10 @@ Android: `npm run tauri android build -- --apk --target aarch64 --target armv7 -
 - **Data locations:**
   - Windows: `%APPDATA%\com.habitlevelling.app\habits.db`
   - Android: app-private storage
+- **The Claude desktop app virtualises AppData.** It's a packaged app, so anything launched from a Claude session (`tauri dev`, the exe, tests, Python) reads and writes `%APPDATA%` inside `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\` instead.
+  - Data created in an app started from Claude is invisible to the same app opened from Explorer, and the reverse.
+  - From Claude you can't see the user's real data. Don't tell them their data is safe based on a read from inside Claude.
+  - To move data across, export a backup to `Documents`, which isn't virtualised.
 - `graphify-out/` is a stale generated graph. Ignore it.
 
 ## Releases
@@ -61,5 +65,17 @@ Bump the version in the root `Cargo.toml`, `src-tauri/tauri.conf.json` and `pack
 ## Working style
 
 - **Commit and push only when asked.** Keep unrelated changes out of commits, and check for edits made outside the session before committing.
+- **Don't leave the Android emulator running.** Shut it down (`adb emu kill`) once testing is done; it holds about 1 GB of RAM. Start it again when needed.
 - **Be token-efficient.** Use targeted reads and greps and small edits. Verify with tests, logs or DB queries before taking screenshots, and keep screenshots small.
 - **Verify before claiming.** Run the tests and type-check after changes, and check real builds when packaging is affected.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships. It is local only (git-ignored) and built from code with no API cost. graphify is installed in its own venv, not on PATH, so call it by full path: `$env:USERPROFILE\.graphify-venv\Scripts\graphify.exe` (PowerShell). A personal PreToolUse hook in `.claude/settings.local.json` reminds you before searches and reads.
+
+Rules:
+- When graphify-out/graph.json exists, run `graphify query "<question>"` before your first grep, search or source-file read for a codebase question, and put this rule in every subagent prompt that explores code. Read raw files only for lines the graph or an earlier read already located. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- **Don't trust impact queries alone.** `graphify affected "<symbol>"` misses calls across crates. For example, it doesn't see `src-tauri` calling into `habit_core`. Before changing a function's behaviour or signature, confirm its callers with a Grep limited to `crates/`, `src-tauri/src` and `src/`. Never search the whole repo: `target/` and `node_modules/` are huge.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost). It isn't refreshed automatically; `graphify hook install` would add git hooks that do this after each commit.

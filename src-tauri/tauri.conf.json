@@ -13,8 +13,9 @@
     "windows": [
       {
         "title": "Habit Levelling",
-        "width": 960,
-        "height": 760,
+        "width": 1120,
+        "height": 800,
+        "center": true,
         "minWidth": 520,
         "minHeight": 480,
         "theme": "Dark",

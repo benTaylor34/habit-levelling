@@ -3,6 +3,7 @@ mod commands;
 mod db;
 mod error;
 mod habits;
+mod quests;
 
 use tauri::Manager;
 
@@ -48,9 +49,14 @@ pub fn run() {
             commands::delete_habit,
             commands::complete_habit_today,
             commands::undo_habit_today,
+            commands::log_habit_day,
+            commands::undo_habit_day,
             commands::get_stats,
             commands::get_stat_history,
             commands::get_activity,
+            commands::get_daily_quests,
+            commands::complete_quest,
+            commands::undo_quest,
             commands::export_backup,
             commands::inspect_backup,
             commands::restore_backup,

@@ -9,6 +9,7 @@ import type {
   HabitSummary,
   IsoDate,
   Activity,
+  DailyQuest,
   BackupInfo,
   BackupSummary,
   RestoreResult,
@@ -30,8 +31,15 @@ export const api = {
   completeToday: (id: number, log: CompletionInput) =>
     invoke<LogResult>("complete_habit_today", { id, log }),
   undoToday: (id: number) => invoke<HabitSummary>("undo_habit_today", { id }),
+  /** Log (or correct) an earlier day; returns the habit's refreshed details. */
+  logDay: (id: number, date: IsoDate, log: CompletionInput) =>
+    invoke<HabitDetails>("log_habit_day", { id, date, log }),
+  undoDay: (id: number, date: IsoDate) => invoke<HabitDetails>("undo_habit_day", { id, date }),
   getStats: () => invoke<StatProgress[]>("get_stats"),
   getActivity: () => invoke<Activity>("get_activity"),
+  getDailyQuests: () => invoke<DailyQuest[]>("get_daily_quests"),
+  completeQuest: (id: string) => invoke<DailyQuest[]>("complete_quest", { id }),
+  undoQuest: (id: string) => invoke<DailyQuest[]>("undo_quest", { id }),
   /** Builds a backup; the page saves it via the system Save dialog. */
   exportBackup: () => invoke<{ fileName: string; json: string }>("export_backup"),
   inspectBackup: (json: string) => invoke<BackupSummary>("inspect_backup", { json }),
@@ -39,8 +47,9 @@ export const api = {
   getBackupInfo: () => invoke<BackupInfo>("get_backup_info"),
   /** `days` = null means all time. */
   getStatHistory: (days: number | null) => invoke<StatHistory>("get_stat_history", { days }),
-  previewXp: (id: number, log: CompletionInput) =>
-    invoke<XpPreview>("preview_xp", { id, ...log }),
+  /** XP preview for today, or for `date` when filling in an earlier day. */
+  previewXp: (id: number, log: CompletionInput, date?: IsoDate) =>
+    invoke<XpPreview>("preview_xp", { id, ...log, date: date ?? null }),
   recommendStats: (name: string, description: string | null) =>
     invoke<StatRecommendation>("recommend_stats", { name, description }),
 };

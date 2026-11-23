@@ -13,6 +13,8 @@ use habit_core::models::{
     StatProgress, XpPreview,
 };
 use habit_core::activity::Activity;
+use habit_core::quests::DailyQuest;
+use crate::quests;
 use crate::backup::{self, BackupSummary};
 use crate::error::AppError;
 use crate::habits;
@@ -79,22 +81,52 @@ pub async fn undo_habit_today(pool: State<'_, SqlitePool>, id: i64) -> AppResult
     habits::summary(&pool, id, today).await
 }
 
+/// Log (or correct) a habit for an earlier day, picked on its calendar.
+/// Returns the habit's refreshed details.
+#[tauri::command]
+pub async fn log_habit_day(
+    pool: State<'_, SqlitePool>,
+    id: i64,
+    date: NaiveDate,
+    log: CompletionInput,
+) -> AppResult<HabitDetails> {
+    let today = today();
+    habits::log_past_day(&pool, id, date, today, log).await?;
+    habits::details(&pool, id, today).await
+}
+
+/// Remove a habit's log for an earlier day. Returns the refreshed details.
+#[tauri::command]
+pub async fn undo_habit_day(
+    pool: State<'_, SqlitePool>,
+    id: i64,
+    date: NaiveDate,
+) -> AppResult<HabitDetails> {
+    let today = today();
+    if date > today {
+        return Err(AppError::Invalid("That day hasn't happened yet".into()));
+    }
+    habits::uncomplete(&pool, id, date).await?;
+    habits::details(&pool, id, today).await
+}
+
 #[tauri::command]
 pub async fn get_stats(pool: State<'_, SqlitePool>) -> AppResult<Vec<StatProgress>> {
     habits::stat_progress(&pool, today()).await
 }
 
-/// XP a log for today would give the habit's primary and secondary stats
-/// (including the streak bonus), so the form can preview it without
-/// duplicating the formula.
+/// XP a log for today (or `date`, when filling in an earlier day) would give
+/// the habit's primary and secondary stats, including the streak bonus, so the
+/// form can preview it without duplicating the formula.
 #[tauri::command]
 pub async fn preview_xp(
     pool: State<'_, SqlitePool>,
     id: i64,
     minutes: u32,
     difficulty: u32,
+    date: Option<NaiveDate>,
 ) -> AppResult<XpPreview> {
-    habits::preview_xp(&pool, id, today(), minutes, difficulty).await
+    habits::preview_xp(&pool, id, date.unwrap_or_else(today), minutes, difficulty).await
 }
 
 /// Suggested primary/secondary stats for a habit's name and description.
@@ -116,6 +148,24 @@ pub async fn get_stat_history(
 #[tauri::command]
 pub async fn get_activity(pool: State<'_, SqlitePool>) -> AppResult<Activity> {
     habits::activity(&pool, today()).await
+}
+
+/// Today's three daily quests, scaled to each stat's level.
+#[tauri::command]
+pub async fn get_daily_quests(pool: State<'_, SqlitePool>) -> AppResult<Vec<DailyQuest>> {
+    quests::today(&pool, today()).await
+}
+
+/// Mark one of today's quests done; returns today's quests.
+#[tauri::command]
+pub async fn complete_quest(pool: State<'_, SqlitePool>, id: String) -> AppResult<Vec<DailyQuest>> {
+    quests::complete(&pool, today(), &id).await
+}
+
+/// Undo one of today's quests; returns today's quests.
+#[tauri::command]
+pub async fn undo_quest(pool: State<'_, SqlitePool>, id: String) -> AppResult<Vec<DailyQuest>> {
+    quests::undo(&pool, today(), &id).await
 }
 
 /// Where automatic and safety backups live: `<app data>/backups`.

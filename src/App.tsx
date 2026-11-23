@@ -6,10 +6,12 @@ import { Analysis } from "./pages/Analysis";
 import { Data } from "./pages/Data";
 import { Dashboard } from "./pages/Dashboard";
 import { HabitDetails } from "./pages/HabitDetails";
+import { Quests } from "./pages/Quests";
 import "./App.css";
 
 type View =
   | { page: "dashboard" }
+  | { page: "quests" }
   | { page: "analysis" }
   | { page: "data" }
   | { page: "details"; id: number };
@@ -55,6 +57,13 @@ function App() {
             Today
           </button>
           <button
+            className={view.page === "quests" ? "active" : ""}
+            aria-current={view.page === "quests" ? "page" : undefined}
+            onClick={() => setView({ page: "quests" })}
+          >
+            Quests
+          </button>
+          <button
             className={view.page === "analysis" ? "active" : ""}
             aria-current={view.page === "analysis" ? "page" : undefined}
             onClick={() => setView({ page: "analysis" })}
@@ -72,6 +81,8 @@ function App() {
       </nav>
       {view.page === "data" ? (
         <Data />
+      ) : view.page === "quests" ? (
+        <Quests key={today} />
       ) : view.page === "analysis" ? (
         <Analysis key={today} />
       ) : view.page === "dashboard" ? (

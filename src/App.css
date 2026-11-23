@@ -426,6 +426,11 @@ button { font: inherit; color: inherit; }
 .calendar-day.today { border-color: var(--accent-2); color: var(--text); font-weight: 650; }
 .calendar-day.today.completed { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent-2); border-color: transparent; }
 .calendar-day.future { background: transparent; color: var(--muted); opacity: 0.45; }
+/* Days up to today are buttons: pick one to log or edit it. */
+button.calendar-day { font: inherit; font-size: 0.82rem; cursor: pointer; padding: 0; }
+button.calendar-day:hover { border-color: var(--accent-2); color: var(--text); }
+button.calendar-day.completed:hover { filter: brightness(1.08); color: #062418; }
+button.calendar-day:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
 
 /* ───────────────────────── Modal form ───────────────────────── */
 .modal-backdrop {
@@ -1066,3 +1071,38 @@ input:focus, textarea:focus {
   .habit-card:hover { border-color: var(--border); background: var(--surface); }
   .habit-card.done:hover { border-color: rgb(52 211 153 / 0.18); }
 }
+
+/* Habit level: a quiet badge next to the name (the habit's XP isn't shown). */
+.habit-level {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  vertical-align: 2px;
+  color: var(--accent-2);
+  background: var(--accent-soft);
+  border-radius: 6px;
+}
+.habit-level.large { margin-left: 12px; padding: 3px 9px; font-size: 0.8rem; vertical-align: 6px; }
+
+/* ───────────────────────── Daily quests ───────────────────────── */
+.quest-panel { margin-bottom: 6px; }
+.quests-page { max-width: 720px; }
+.quest-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.quest {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--stat);
+  border-radius: var(--radius-sm);
+}
+.quest.done { opacity: 0.7; }
+.quest.done .quest-text { text-decoration: line-through; text-decoration-color: var(--muted); }
+.quest-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.quest-text { font-size: 0.9rem; font-weight: 550; line-height: 1.35; }
+.quest-meta { display: flex; align-items: center; gap: 8px; }

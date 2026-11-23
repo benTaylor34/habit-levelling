@@ -15,7 +15,7 @@ use habit_core::activity::{self, Activity};
 use habit_core::decay;
 use habit_core::history::{self, StatGain};
 use habit_core::stats::{self, Stat};
-use habit_core::{luck, streaks};
+use habit_core::{habit_levels, luck, streaks};
 
 const DATE_FORMAT: &str = "%Y-%m-%d";
 const HABIT_COLUMNS: &str =
@@ -130,6 +130,45 @@ pub async fn complete_with_roll(
     log: CompletionInput,
     roll: u32,
 ) -> AppResult<Option<LuckWin>> {
+    record(pool, id, date, log).await?;
+    let date_str = date.format(DATE_FORMAT).to_string();
+    let streak = streaks::current_streak(&dates_of(&completions(pool, id).await?), date);
+    let Some(milestone) = luck::milestone(streak) else {
+        return Ok(None);
+    };
+    let xp = luck::award(milestone, roll);
+    let inserted = sqlx::query(
+        "INSERT OR IGNORE INTO luck_rolls (habit_id, date, streak, xp) VALUES (?, ?, ?, ?)",
+    )
+    .bind(id)
+    .bind(&date_str)
+    .bind(streak)
+    .bind(xp)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok((inserted == 1 && xp > 0).then_some(LuckWin { xp, streak }))
+}
+
+/// Log (or correct) a habit for a day before today, e.g. one you forgot to
+/// log. XP and streaks follow from the logs as usual, but there's no Luck
+/// roll: Luck is only for logging on the day, so back-filling can't farm it.
+pub async fn log_past_day(
+    pool: &SqlitePool,
+    id: i64,
+    date: NaiveDate,
+    today: NaiveDate,
+    log: CompletionInput,
+) -> AppResult<()> {
+    if date >= today {
+        return Err(AppError::Invalid("Only days before today can be filled in".into()));
+    }
+    record(pool, id, date, log).await
+}
+
+/// Validate a log and save it as the habit's entry for `date`, replacing any
+/// existing one.
+async fn record(pool: &SqlitePool, id: i64, date: NaiveDate, log: CompletionInput) -> AppResult<()> {
     if log.minutes > stats::MAX_MINUTES {
         return Err(AppError::Invalid("Time spent can't be more than 24 hours".into()));
     }
@@ -149,23 +188,7 @@ pub async fn complete_with_roll(
     .bind(log.difficulty)
     .execute(pool)
     .await?;
-
-    let streak = streaks::current_streak(&dates_of(&completions(pool, id).await?), date);
-    let Some(milestone) = luck::milestone(streak) else {
-        return Ok(None);
-    };
-    let xp = luck::award(milestone, roll);
-    let inserted = sqlx::query(
-        "INSERT OR IGNORE INTO luck_rolls (habit_id, date, streak, xp) VALUES (?, ?, ?, ?)",
-    )
-    .bind(id)
-    .bind(&date_str)
-    .bind(streak)
-    .bind(xp)
-    .execute(pool)
-    .await?
-    .rows_affected();
-    Ok((inserted == 1 && xp > 0).then_some(LuckWin { xp, streak }))
+    Ok(())
 }
 
 /// Remove the completion on `date`, if any.
@@ -250,10 +273,11 @@ fn idle_days(habit: &Habit, dates: &[NaiveDate], today: NaiveDate) -> u32 {
 
 fn summarize(habit: Habit, completions: &[Completion], today: NaiveDate) -> HabitSummary {
     let dates = dates_of(completions);
-    let idle_days = idle_days(&habit, &dates, today);
+    let (level, decay) = habit_levels::status(completions.iter().map(|c| (c.date, c.minutes)), today);
     HabitSummary {
-        idle_days,
-        needs_attention: idle_days >= decay::GRACE_DAYS,
+        idle_days: idle_days(&habit, &dates, today),
+        level,
+        decay,
         current_streak: streaks::current_streak(&dates, today),
         longest_streak: streaks::longest_streak(&dates),
         completed_today: dates.contains(&today),
@@ -296,9 +320,17 @@ pub async fn details(pool: &SqlitePool, id: i64, today: NaiveDate) -> AppResult<
 /// it was done.
 /// Every XP gain any stat has received: a habit's primary stat gets each
 /// completion's full XP (time × difficulty × that day's streak bonus) and its
-/// secondary stat gets half.
+/// secondary stat gets half. Completed daily quests add their XP to their
+/// stat on the day they were done.
 pub async fn stat_gains(pool: &SqlitePool) -> AppResult<Vec<StatGain>> {
     let mut out = Vec::new();
+    let quests: Vec<(String, Stat, i64)> =
+        sqlx::query_as("SELECT date, stat, xp FROM quest_completions")
+            .fetch_all(pool)
+            .await?;
+    for (date, stat, xp) in quests {
+        out.push(StatGain { date: parse_date(&date)?, stat, xp: xp.max(0) as u32 });
+    }
     for habit in list(pool).await? {
         let Some(primary) = habit.primary_stat else { continue };
         // Per-habit history so each completion carries that habit's streak bonus.
@@ -380,7 +412,7 @@ mod tests {
         NaiveDate::parse_from_str(s, DATE_FORMAT).unwrap()
     }
 
-    /// A plain completion: no time tracked, easiest difficulty (10 XP).
+    /// A plain completion: no time tracked, easiest difficulty (0 XP, but it counts for streaks).
     const PLAIN: CompletionInput = CompletionInput { minutes: 0, difficulty: 1 };
 
     fn log(minutes: u32, difficulty: u32) -> CompletionInput {
@@ -511,6 +543,7 @@ mod tests {
         let s = summary(&pool, h.id, today).await.unwrap();
         assert_eq!(s.total_completions, 1);
         assert_eq!(s.total_minutes, 45);
+        assert_eq!(s.level, 2, "45 minutes + 10 base = 55 XP: level 2 (20), short of 3 (120)");
         assert_eq!(s.total_xp, stats::completion_xp(45, 3, 1));
         let today_log = s.today_log.unwrap();
         assert_eq!((today_log.minutes, today_log.difficulty), (45, 3));
@@ -675,26 +708,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn habits_need_attention_after_a_week() {
+    async fn habit_levels_fade_after_a_week_without_it() {
         let pool = db::test_pool().await;
         let h = create(&pool, input("Read", Some(Intelligence), None)).await.unwrap();
-        complete(&pool, h.id, d("2026-11-01"), PLAIN).await.unwrap();
+        complete(&pool, h.id, d("2026-11-01"), log(30, 2)).await.unwrap();
         let s = summary(&pool, h.id, d("2026-11-07")).await.unwrap();
-        assert_eq!((s.idle_days, s.needs_attention), (6, false));
+        assert_eq!((s.idle_days, s.level, s.decay), (6, 2, DecayPhase::None));
         let s = summary(&pool, h.id, d("2026-11-08")).await.unwrap();
-        assert_eq!((s.idle_days, s.needs_attention), (7, true));
+        assert_eq!((s.idle_days, s.level, s.decay), (7, 2, DecayPhase::Xp), "XP fades, level kept");
         complete(&pool, h.id, d("2026-11-08"), PLAIN).await.unwrap();
         let s = summary(&pool, h.id, d("2026-11-08")).await.unwrap();
-        assert_eq!((s.idle_days, s.needs_attention), (0, false));
+        assert_eq!((s.idle_days, s.decay), (0, DecayPhase::None), "doing it stops the fade");
     }
 
     #[tokio::test]
-    async fn never_done_habits_count_from_creation() {
+    async fn never_done_habits_count_from_creation_but_have_nothing_to_fade() {
         let pool = db::test_pool().await;
         let h = create(&pool, input("Read", None, None)).await.unwrap();
         let created = NaiveDate::parse_from_str(&h.created_at[..10], DATE_FORMAT).unwrap();
         let s = summary(&pool, h.id, created + chrono::Days::new(9)).await.unwrap();
-        assert_eq!((s.idle_days, s.needs_attention), (9, true));
+        assert_eq!((s.idle_days, s.level, s.decay), (9, 1, DecayPhase::None));
     }
 
     #[tokio::test]
@@ -735,6 +768,50 @@ mod tests {
         assert_eq!(win, Some(LuckWin { xp: luck::WEEKLY.xp, streak: 7 }));
         let luck_stat = stat(&stat_progress(&pool, d("2026-11-07")).await.unwrap(), Luck).clone();
         assert_eq!(luck_stat.xp, luck::WEEKLY.xp);
+    }
+
+    #[tokio::test]
+    async fn a_forgotten_day_can_be_filled_in_and_mends_the_streak() {
+        let pool = db::test_pool().await;
+        let h = create(&pool, input("Read", Some(Intelligence), None)).await.unwrap();
+        let today = d("2026-11-21");
+        complete_with_roll(&pool, h.id, d("2026-11-19"), log(20, 2), 99).await.unwrap();
+        complete_with_roll(&pool, h.id, today, log(20, 2), 99).await.unwrap();
+        assert_eq!(summary(&pool, h.id, today).await.unwrap().current_streak, 1);
+
+        // Forgot yesterday: fill it in and the streak joins up again.
+        log_past_day(&pool, h.id, d("2026-11-20"), today, log(30, 3)).await.unwrap();
+        let s = summary(&pool, h.id, today).await.unwrap();
+        assert_eq!(s.current_streak, 3);
+        let days = completions(&pool, h.id).await.unwrap();
+        assert_eq!((days[1].minutes, days[1].difficulty), (30, 3));
+        assert_eq!(days[2].xp, stats::completion_xp(20, 2, 3), "today's bonus follows the mended streak");
+
+        // Editing it again replaces the entry; undoing removes it.
+        log_past_day(&pool, h.id, d("2026-11-20"), today, log(45, 3)).await.unwrap();
+        assert_eq!(completions(&pool, h.id).await.unwrap()[1].minutes, 45);
+        uncomplete(&pool, h.id, d("2026-11-20")).await.unwrap();
+        assert_eq!(summary(&pool, h.id, today).await.unwrap().current_streak, 1);
+
+        // Today and the future aren't "past days".
+        assert!(log_past_day(&pool, h.id, today, today, PLAIN).await.is_err());
+        assert!(log_past_day(&pool, h.id, d("2026-11-22"), today, PLAIN).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn filling_in_a_past_milestone_never_rolls_for_luck() {
+        let pool = db::test_pool().await;
+        let h = create(&pool, input("Read", Some(Intelligence), None)).await.unwrap();
+        let today = d("2026-11-21");
+        for day in 1..=7 {
+            let date = d("2026-11-01") + chrono::Days::new(day - 1);
+            log_past_day(&pool, h.id, date, today, PLAIN).await.unwrap();
+        }
+        let (rolls,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM luck_rolls")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(rolls, 0);
     }
 
     #[tokio::test]

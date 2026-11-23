@@ -57,10 +57,12 @@ export interface HabitSummary extends Habit {
   totalCompletions: number;
   totalMinutes: number;
   totalXp: number;
+  /** The habit's own level, from time spent only (its XP isn't shown). */
+  level: number;
   /** Days since last done (or since created, if never done). */
   idleDays: number;
-  /** Not done for a week or more: its stats are decaying. */
-  needsAttention: boolean;
+  /** Whether the habit's level is fading because it hasn't been done lately. */
+  decay: DecayPhase;
   /** Today's log, if completed today. */
   todayLog: Completion | null;
   /** Last 7 days, oldest first; the last entry is today. */
@@ -185,6 +187,17 @@ export interface BackupInfo {
   /** Full path of the newest automatic backup. */
   latestAuto: string | null;
   autoBackupsKept: number;
+}
+
+/** One of today's quests (see habit_core::quests). */
+export interface DailyQuest {
+  id: string;
+  stat: StatKey;
+  /** Ready-to-show wording, e.g. "Do 12 push-ups". */
+  text: string;
+  amount: number;
+  xp: number;
+  completed: boolean;
 }
 
 export interface StatInfo {

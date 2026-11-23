@@ -21,7 +21,8 @@ use habit_core::stats::{self, Stat};
 /// Identifies our files, so restoring some other JSON file fails clearly.
 pub const APP_TAG: &str = "habit-levelling";
 /// Bump when the file layout changes; older files must stay restorable.
-pub const FORMAT_VERSION: u32 = 1;
+/// 2 added `questCompletions`; version 1 files (without it) still restore.
+pub const FORMAT_VERSION: u32 = 2;
 /// How many automatic daily backups to keep.
 pub const AUTO_BACKUPS_KEPT: usize = 14;
 const AUTO_PREFIX: &str = "auto-";
@@ -57,6 +58,16 @@ pub struct BackupLuckRoll {
     pub xp: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupQuest {
+    pub date: NaiveDate,
+    pub quest_id: String,
+    pub stat: Stat,
+    pub amount: u32,
+    pub xp: u32,
+}
+
 /// The whole backup file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,6 +79,9 @@ pub struct Backup {
     pub habits: Vec<BackupHabit>,
     pub completions: Vec<BackupCompletion>,
     pub luck_rolls: Vec<BackupLuckRoll>,
+    /// Completed daily quests (format 2+; empty when restoring older files).
+    #[serde(default)]
+    pub quest_completions: Vec<BackupQuest>,
 }
 
 /// What a backup contains, shown before restoring it.
@@ -120,6 +134,11 @@ pub async fn export(pool: &SqlitePool) -> AppResult<Backup> {
         sqlx::query_as("SELECT habit_id, date, streak, xp FROM luck_rolls ORDER BY habit_id, date")
             .fetch_all(pool)
             .await?;
+    let quests: Vec<(String, String, Stat, i64, i64)> = sqlx::query_as(
+        "SELECT date, quest_id, stat, amount, xp FROM quest_completions ORDER BY date, quest_id",
+    )
+    .fetch_all(pool)
+    .await?;
 
     Ok(Backup {
         app: APP_TAG.into(),
@@ -149,6 +168,18 @@ pub async fn export(pool: &SqlitePool) -> AppResult<Backup> {
                     habit_id,
                     date: parse_date(&date)?,
                     streak: streak.max(0) as u32,
+                    xp: xp.max(0) as u32,
+                })
+            })
+            .collect::<AppResult<_>>()?,
+        quest_completions: quests
+            .into_iter()
+            .map(|(date, quest_id, stat, amount, xp)| {
+                Ok(BackupQuest {
+                    date: parse_date(&date)?,
+                    quest_id,
+                    stat,
+                    amount: amount.max(0) as u32,
                     xp: xp.max(0) as u32,
                 })
             })
@@ -215,6 +246,12 @@ fn validate(b: &Backup) -> AppResult<()> {
             return bad(format!("bad Luck roll for habit {} on {}", r.habit_id, r.date));
         }
     }
+    let mut quests_done = HashSet::new();
+    for q in &b.quest_completions {
+        if !Stat::TRAINABLE.contains(&q.stat) || !quests_done.insert((q.date, q.quest_id.as_str())) {
+            return bad(format!("bad quest '{}' on {}", q.quest_id, q.date));
+        }
+    }
     Ok(())
 }
 
@@ -224,6 +261,7 @@ pub async fn restore(pool: &SqlitePool, backup: &Backup) -> AppResult<()> {
     let mut tx = pool.begin().await?;
     // Children first, so foreign keys are never violated mid-way.
     sqlx::query("DELETE FROM luck_rolls").execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM quest_completions").execute(&mut *tx).await?;
     sqlx::query("DELETE FROM habit_completions").execute(&mut *tx).await?;
     sqlx::query("DELETE FROM habits").execute(&mut *tx).await?;
     for h in &backup.habits {
@@ -260,6 +298,18 @@ pub async fn restore(pool: &SqlitePool, backup: &Backup) -> AppResult<()> {
             .bind(r.xp)
             .execute(&mut *tx)
             .await?;
+    }
+    for q in &backup.quest_completions {
+        sqlx::query(
+            "INSERT INTO quest_completions (date, quest_id, stat, amount, xp) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(q.date.format(DATE_FORMAT).to_string())
+        .bind(&q.quest_id)
+        .bind(q.stat)
+        .bind(q.amount)
+        .bind(q.xp)
+        .execute(&mut *tx)
+        .await?;
     }
     tx.commit().await?;
     Ok(())
@@ -436,6 +486,31 @@ mod tests {
         let mut now = export(&pool).await.unwrap();
         now.exported_at = good.exported_at.clone();
         assert_eq!(now, good, "nothing changed");
+    }
+
+    #[tokio::test]
+    async fn quests_round_trip_and_version_1_backups_still_restore() {
+        let pool = sample().await;
+        let day = d("2026-11-07");
+        let quest = crate::quests::today(&pool, day).await.unwrap()[0].clone();
+        crate::quests::complete(&pool, day, &quest.id).await.unwrap();
+
+        let backup = export(&pool).await.unwrap();
+        assert_eq!(backup.format_version, 2);
+        assert_eq!(backup.quest_completions.len(), 1);
+        let target = db::test_pool().await;
+        restore(&target, &parse(&backup.to_json()).unwrap()).await.unwrap();
+        assert_eq!(
+            habits::stat_progress(&target, day).await.unwrap(),
+            habits::stat_progress(&pool, day).await.unwrap(),
+            "quest XP comes back with the restore"
+        );
+
+        // A version-1 file has no questCompletions at all.
+        let mut v1: serde_json::Value = serde_json::from_str(&backup.to_json()).unwrap();
+        v1["formatVersion"] = 1.into();
+        v1.as_object_mut().unwrap().remove("questCompletions");
+        assert!(parse(&v1.to_string()).unwrap().quest_completions.is_empty());
     }
 
     #[test]

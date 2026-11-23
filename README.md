@@ -47,15 +47,37 @@ Each habit has one log per day. When you tick a habit off, choose how long you s
 
 If you come back to a habit later the same day, press **+ Time** on its card and choose **Add time** to add the new session to today's total, or **Edit total** to correct it. XP is worked out from the day's total, so splitting a session into several logs never earns extra.
 
+Forgot to log a day? Open the habit and pick the day on its calendar to fill it in, change it or remove it. Streaks and XP update as if you'd logged it on time, including the streak bonus on later days. Filled-in days never roll for Luck.
+
+A day with less than **10 minutes** logged earns no XP for stats or the habit's level, but it still counts as done, so the streak carries on. Adding time later that day to reach 10 minutes earns the XP after all.
+
 ### Levels
 
-Level 1 → 2 costs just 10 XP, so the first completion of any habit levels its stat up. After that, each level costs 40 XP more than the one before:
+Level 1 → 2 costs just 10 XP, so the first completion of 10 minutes or more levels its stat up. After that, each level costs 40 XP more than the one before:
 
 | Level up | 1 → 2 | 2 → 3 | 5 → 6 | 10 → 11 | 50 → 51 | 99 → 100 |
 | --- | --- | --- | --- | --- | --- | --- |
 | XP needed | 10 | 50 | 170 | 370 | 1,970 | 3,930 |
 
 Level 100 takes 195,030 XP in total, which is about 11 months of a Hard 2-hour habit every day without breaking the streak. The XP bar resets after every level up. Levels stop at 100.
+
+### Daily quests
+
+Each day brings **3 quests, each for a different stat**: small, at-home challenges such as push-ups, a walk, journaling, reading or starting a conversation. Some quests are about healthy basics (sleep, water, screen-free time before bed, reaching out to people), not just training.
+
+- **Targets scale with that stat's level** at the start of the day, and vary a little from day to day. For example, push-ups are about 5–11 at level 1, 21–49 at level 10, and up to around 150 at high levels. Every quest has a cap, so all three stay doable in one day. Sleep and water quests stay at healthy amounts at every level.
+- **Completing one gives its stat XP** worth 1–20% of what that stat needs for its next level: a bigger share at low levels and more for harder targets, so quests stay worthwhile as you level up. Quest XP counts as training, so it also holds off decay.
+- **The same 3 quests stay for the whole day**, and a new set arrives tomorrow. Find them on the **Quests** tab: tick one to complete it, and tick again to undo.
+
+### Habit levels
+
+Each habit also has its own level, shown next to its name. It's a slow measure of how much time you've given the habit:
+
+- **XP:** each completed day of 10 minutes or more earns 10 XP plus 1 per minute spent, the same base as a stat. Difficulty and streaks don't affect it.
+- **Cost:** each habit level costs twice the XP of the same stat level.
+- **Visibility:** the XP itself isn't shown.
+
+For a typical habit (daily, Moderate, streak kept) that makes habit levels take roughly **4× as long** as its stat's levels. A 30-minute daily habit reaches level 10 in about 2½ months and level 20 in about a year.
 
 ### Decay
 
@@ -65,7 +87,9 @@ Level 100 takes 195,030 XP in total, which is about 11 months of a Hard 2-hour h
 | 7–20 | It loses 10% of its current level's XP bar, down to 0. The level is kept. |
 | 21+ | Once the bar is empty it drops a level (landing at 90% of that bar) and keeps draining. It never goes below level 1. |
 
-Training the stat again stops the decay straight away.
+Training the stat again stops the decay straight away. Stats that are fading are marked in the stat panel.
+
+**Habit levels fade the same way** when you stop doing the habit: the same timings, measured from the last day you did it, on the habit's own XP bar. Doing it again, even for less than 10 minutes, stops the fade. A fading habit shows a warning on its card and its page. A habit you've never done has nothing to lose, so it shows no warning.
 
 ### Luck
 
@@ -213,13 +237,15 @@ Two design rules keep the data trustworthy:
 | `crates/core/src/history.rs` | Day-by-day stat XP and levels for the Analysis page |
 | `crates/core/src/activity.rs` | A year of daily activity for the heatmap |
 | `crates/core/src/recommend.rs` | Keyword-based stat suggestions |
+| `crates/core/src/quests.rs` | Daily quest catalog, daily picks, scaled targets and quest XP |
+| `crates/core/src/habit_levels.rs` | Each habit's own level, from time spent |
 | `crates/core/src/models.rs` | Shared data types, serialised for the UI |
 | `src-tauri/src/commands.rs` | Tauri commands: the frontend's only API. Decides what "today" is. |
 | `src-tauri/src/habits.rs` | Habit CRUD, completions, summaries and stat queries (SQLite) |
 | `src-tauri/src/backup.rs` | JSON export, checked all-or-nothing restore, daily automatic backups |
 | `src-tauri/src/db.rs` | SQLite connection and embedded migrations |
 | `src-tauri/migrations/` | Database schema |
-| `src/pages/` | Today (dashboard), habit details, Analysis and Data pages |
+| `src/pages/` | Today (dashboard), habit details, Quests, Analysis and Data pages |
 | `src/components/` | Habit cards, forms, stat panel, charts and heatmap |
 | `src/platform/` | Platform edge: file pickers, native dialogs, Android Back button |
 | `src/lib/` | Typed command wrappers, shared types and date helpers |

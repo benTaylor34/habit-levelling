@@ -1,16 +1,20 @@
 import { useEffect, useState } from "react";
 import { api, errorMessage } from "../lib/tauri";
 import { useBackHandler } from "../platform";
-import type { Completion, CompletionInput, HabitSummary, XpPreview } from "../lib/types";
+import type { Completion, CompletionInput, HabitSummary, IsoDate, XpPreview } from "../lib/types";
 import { DIFFICULTY_LABELS, statInfo } from "../lib/types";
-import { formatMinutes } from "../lib/dates";
+import { formatMinutes, parseIsoDate } from "../lib/dates";
 import { BoltIcon, CheckIcon, FlameIcon } from "./Icons";
 
 interface Props {
   habit: HabitSummary;
   /** Today's existing log, when the habit is already done today. */
   initial?: Completion | null;
+  /** An earlier day being filled in or corrected; omitted for today. */
+  date?: IsoDate;
   onSubmit: (log: CompletionInput) => Promise<void>;
+  /** Remove the day's log (offered for earlier days that have one). */
+  onRemove?: () => Promise<void>;
   onCancel: () => void;
 }
 
@@ -28,7 +32,11 @@ type Mode = "add" | "edit";
  * habit is already done today it can add another session's time to today's
  * log (the default) or edit the day's total.
  */
-export function LogForm({ habit, initial, onSubmit, onCancel }: Props) {
+export function LogForm({ habit, initial, date, onSubmit, onRemove, onCancel }: Props) {
+  // "today", or e.g. "on Friday 20 November" for an earlier day.
+  const dayText = date
+    ? `on ${parseIsoDate(date).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}`
+    : "today";
   const [mode, setMode] = useState<Mode>(initial ? "add" : "edit");
   // Time entered so far: the session being added, or the day's total.
   const [mins, setMins] = useState(0);
@@ -47,13 +55,13 @@ export function LogForm({ habit, initial, onSubmit, onCancel }: Props) {
   useEffect(() => {
     let stale = false;
     api
-      .previewXp(habit.id, { minutes: total, difficulty })
+      .previewXp(habit.id, { minutes: total, difficulty }, date)
       .then((v) => !stale && setXp(v))
       .catch(() => {});
     return () => {
       stale = true;
     };
-  }, [habit.id, total, difficulty]);
+  }, [habit.id, total, difficulty, date]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
@@ -78,6 +86,18 @@ export function LogForm({ habit, initial, onSubmit, onCancel }: Props) {
     setTyping(null);
   }
 
+  async function remove() {
+    if (!onRemove) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onRemove();
+    } catch (err) {
+      setError(errorMessage(err));
+      setSaving(false);
+    }
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -94,16 +114,16 @@ export function LogForm({ habit, initial, onSubmit, onCancel }: Props) {
     <div className="modal-backdrop" onClick={onCancel}>
       <form className="modal" onSubmit={submit} onClick={(e) => e.stopPropagation()}>
         <div>
-          <h2>{initial ? "Today's log" : "Nice work!"}</h2>
+          <h2>{date ? (initial ? "Edit an earlier day" : "Fill in an earlier day") : initial ? "Today's log" : "Nice work!"}</h2>
           <p className="muted small">
             {initial ? (
               <>
-                <strong className="text">{habit.name}</strong> is done today with{" "}
+                <strong className="text">{habit.name}</strong> is done {dayText} with{" "}
                 {showMinutes(initial.minutes)} logged.
               </>
             ) : (
               <>
-                How did <strong className="text">{habit.name}</strong> go today?
+                How did <strong className="text">{habit.name}</strong> go {dayText}?
               </>
             )}
           </p>
@@ -202,7 +222,7 @@ export function LogForm({ habit, initial, onSubmit, onCancel }: Props) {
           {adding && (
             <p className="muted small time-total">
               {showMinutes(sofar)} + {showMinutes(mins)} ={" "}
-              <strong className="text">{showMinutes(total)}</strong> today
+              <strong className="text">{showMinutes(total)}</strong> {date ? "that day" : "today"}
             </p>
           )}
         </div>
@@ -245,10 +265,14 @@ export function LogForm({ habit, initial, onSubmit, onCancel }: Props) {
           </div>
         )}
 
+        {xp && xp.primary === 0 && total > 0 && (
+          <p className="muted small">Under 10 minutes keeps your streak going but earns no XP.</p>
+        )}
+
         {error && <p className="error">{error}</p>}
 
         <div className="modal-actions log-actions">
-          <span className="xp-preview" aria-live="polite" title={initial ? "Today's total XP" : undefined}>
+          <span className="xp-preview" aria-live="polite" title={initial ? `Total XP ${dayText}` : undefined}>
             <BoltIcon size={16} />
             {habit.primaryStat ? (
               <>
@@ -265,6 +289,11 @@ export function LogForm({ habit, initial, onSubmit, onCancel }: Props) {
               <span>+{xp?.primary ?? "…"} XP</span>
             )}
           </span>
+          {onRemove && initial && (
+            <button type="button" className="btn ghost danger" disabled={saving} onClick={remove}>
+              Remove
+            </button>
+          )}
           <button type="button" className="btn ghost" onClick={onCancel}>
             Cancel
           </button>

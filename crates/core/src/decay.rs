@@ -1,4 +1,6 @@
-//! Stat decay: stats you stop training slowly fade.
+//! Decay: stats you stop training, and habits you stop doing, slowly fade.
+//! The rules below are the same for both; each fades on its own XP curve
+//! (see `habit_levels` for habits).
 //!
 //! - Days 0–6 without XP in a stat: nothing happens.
 //! - From day 7: each day the stat loses 10% of its current level's XP bar,
@@ -36,22 +38,47 @@ pub enum DecayPhase {
     Level,
 }
 
-/// XP lost per day at `level`: 10% of that level's bar, at least 1.
-pub fn daily_loss(level: u32) -> u32 {
-    (xp_for_next_level(level) * DECAY_PERCENT_PER_DAY / 100).max(1)
+/// A levelling curve: the XP needed to go from `level` to `level + 1`. Stats
+/// and habit levels fade by the same rules, each on its own curve.
+pub type Curve = fn(u32) -> u32;
+
+/// (level, XP into that level) for a total on `curve`, capped at level 100.
+fn split(curve: Curve, xp: u32) -> (u32, u32) {
+    let mut level = 1;
+    let mut remaining = xp;
+    while level < stats::MAX_LEVEL && remaining >= curve(level) {
+        remaining -= curve(level);
+        level += 1;
+    }
+    (level, remaining)
 }
 
-/// Total XP after one day of decay, `days_idle` days after the last gain.
+/// XP a stat loses per day at `level`: 10% of that level's bar, at least 1.
+pub fn daily_loss(level: u32) -> u32 {
+    daily_loss_on(xp_for_next_level, level)
+}
+
+/// `daily_loss` on any curve.
+pub fn daily_loss_on(curve: Curve, level: u32) -> u32 {
+    (curve(level) * DECAY_PERCENT_PER_DAY / 100).max(1)
+}
+
+/// A stat's total XP after one day of decay, `days_idle` days after the last gain.
 pub fn step(xp: u32, days_idle: u32) -> u32 {
+    step_on(xp_for_next_level, xp, days_idle)
+}
+
+/// `step` on any curve.
+pub fn step_on(curve: Curve, xp: u32, days_idle: u32) -> u32 {
     if days_idle < GRACE_DAYS {
         return xp;
     }
-    let (level, into) = stats::level_for_xp(xp);
+    let (level, into) = split(curve, xp);
     if into > 0 {
-        xp - into.min(daily_loss(level))
+        xp - into.min(daily_loss_on(curve, level))
     } else if days_idle >= LEVEL_LOSS_DAYS && level > 1 {
         // Drop into the level below, just short of full.
-        xp - daily_loss(level - 1)
+        xp - daily_loss_on(curve, level - 1)
     } else {
         xp
     }
@@ -59,9 +86,14 @@ pub fn step(xp: u32, days_idle: u32) -> u32 {
 
 /// Which decay phase a stat with `xp` is in after `days_idle` idle days.
 pub fn phase(xp: u32, days_idle: Option<u32>) -> DecayPhase {
+    phase_on(xp_for_next_level, xp, days_idle)
+}
+
+/// `phase` on any curve.
+pub fn phase_on(curve: Curve, xp: u32, days_idle: Option<u32>) -> DecayPhase {
     match days_idle {
         _ if xp == 0 => DecayPhase::None,
-        Some(d) if d >= LEVEL_LOSS_DAYS && stats::level_for_xp(xp).0 > 1 => DecayPhase::Level,
+        Some(d) if d >= LEVEL_LOSS_DAYS && split(curve, xp).0 > 1 => DecayPhase::Level,
         Some(d) if d >= GRACE_DAYS => DecayPhase::Xp,
         _ => DecayPhase::None,
     }
@@ -71,6 +103,16 @@ pub fn phase(xp: u32, days_idle: Option<u32>) -> DecayPhase {
 /// `end`. Returns the total XP at the end of each day (gains first, then
 /// decay). Empty when the stat has never gained XP.
 pub fn simulate(gains: &BTreeMap<NaiveDate, u32>, end: NaiveDate) -> Vec<(NaiveDate, u32)> {
+    simulate_on(xp_for_next_level, gains, end)
+}
+
+/// `simulate` on any curve. A day in `gains` resets the idle clock even when
+/// its XP is 0, since the stat or habit was still trained that day.
+pub fn simulate_on(
+    curve: Curve,
+    gains: &BTreeMap<NaiveDate, u32>,
+    end: NaiveDate,
+) -> Vec<(NaiveDate, u32)> {
     let Some(&first) = gains.keys().next() else {
         return Vec::new();
     };
@@ -84,7 +126,7 @@ pub fn simulate(gains: &BTreeMap<NaiveDate, u32>, end: NaiveDate) -> Vec<(NaiveD
             last_gain = day;
         }
         let idle = (day - last_gain).num_days() as u32;
-        xp = step(xp, idle);
+        xp = step_on(curve, xp, idle);
         out.push((day, xp));
         day = match day.checked_add_days(Days::new(1)) {
             Some(next) => next,
